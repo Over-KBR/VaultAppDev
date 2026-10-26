@@ -12,18 +12,18 @@
 1. Ouvre Chrome et va sur `chrome://extensions/`
 2. Active le **Mode développeur** (interrupteur en haut à droite)
 3. Clique sur **Charger l'extension non empaquetée**
-4. Sélectionne le dossier `extension/` (celui qui contient `manifest.json`)
+4. Sélectionne le dossier `Extension/` (celui qui contient `manifest.json`)
 5. L'icône 🔐 apparaît dans ta barre d'outils
 
 ---
 
 ## Installation Firefox
 
-1. Dans le dossier `extension/`, **renomme** `manifest_firefox.json` en `manifest.json`
+1. Dans le dossier `Extension/`, **renomme** `manifest_firefox.json` en `manifest.json`
    (remplace le manifest Chrome)
 2. Ouvre Firefox et va sur `about:debugging`
 3. Clique sur **Ce Firefox** puis **Charger un module complémentaire temporaire**
-4. Sélectionne le fichier `manifest.json` du dossier `extension/`
+4. Sélectionne le fichier `manifest.json` du dossier `Extension/`
 
 > ⚠️ En Firefox, l'extension temporaire est supprimée à la fermeture du navigateur.
 > Pour une installation permanente, il faudrait signer l'extension sur addons.mozilla.org.
@@ -61,7 +61,7 @@ Navigateur (Extension)
         │  HTTP GET /accounts?url=...
         │  HTTP POST /fill
         ▼
-API Flask locale (127.0.0.1:27842)   ← src/api.py
+API Flask locale (127.0.0.1:27842)   ← Application/src/api.py
         │
         ▼
 VaultApp (Base SQLite chiffrée)
