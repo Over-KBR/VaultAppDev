@@ -18,6 +18,7 @@ from src.clipboard import copy_to_clipboard
 from src.strength import is_weak
 from src import database as db
 from src.ui.dashboard_screen import DashboardScreen
+from src.debug_console import traced_action
 
 
 class MainScreen(ctk.CTkFrame):
@@ -30,6 +31,7 @@ class MainScreen(ctk.CTkFrame):
         self.encryption_key = encryption_key
         self.on_theme_toggle = on_theme_toggle
         self.debug_mode = debug_mode
+        self.debug_console = getattr(parent, "debug_console", None) if debug_mode else None
         self.selected_category_id = None  # None = toutes les catégories
         self.search_query = ""
         self.is_dashboard_active = False
@@ -385,6 +387,10 @@ class MainScreen(ctk.CTkFrame):
     # Actions
     # ══════════════════════════════════════════════════════════════
     
+    @traced_action(
+        "Afficher les comptes",
+        "La liste doit correspondre à la catégorie sélectionnée et à la recherche active.",
+    )
     def _select_category(self, category_id: Optional[int]):
         """Sélectionne une catégorie dans la sidebar."""
         self.is_dashboard_active = False
@@ -408,6 +414,10 @@ class MainScreen(ctk.CTkFrame):
         self._refresh_categories()
         self._refresh_accounts()
 
+    @traced_action(
+        "Ouvrir l'audit",
+        "Le score et les alertes doivent être recalculés à partir des comptes fictifs.",
+    )
     def _select_dashboard(self):
         """Affiche le tableau de bord de sécurité."""
         self.is_dashboard_active = True
@@ -427,6 +437,10 @@ class MainScreen(ctk.CTkFrame):
         self.search_query = query
         self._refresh_accounts()
     
+    @traced_action(
+        "Copier un mot de passe",
+        "En mode debug, l'action doit être bloquée et le presse-papiers doit rester inchangé.",
+    )
     def _copy_password(self, account: Account):
         """Copie le mot de passe dans le presse-papier."""
         if self.debug_mode:
@@ -436,6 +450,10 @@ class MainScreen(ctk.CTkFrame):
             copy_to_clipboard(account.password)
             self._show_toast("🔑 Mot de passe copié ! (effacé dans 30s)")
     
+    @traced_action(
+        "Copier un identifiant",
+        "En mode debug, l'action doit être bloquée et le presse-papiers doit rester inchangé.",
+    )
     def _copy_login(self, account: Account):
         """Copie le login dans le presse-papier."""
         if self.debug_mode:
@@ -445,6 +463,10 @@ class MainScreen(ctk.CTkFrame):
             copy_to_clipboard(account.login, clear_after_seconds=0)
             self._show_toast("👤 Login copié !")
     
+    @traced_action(
+        "Ouvrir le formulaire de compte",
+        "Le formulaire apparaît ; aucune donnée n'est ajoutée avant la sauvegarde.",
+    )
     def _add_account(self):
         """Ouvre le dialogue d'ajout de compte."""
         categories = db.get_all_categories()
@@ -455,6 +477,10 @@ class MainScreen(ctk.CTkFrame):
             encryption_key=self.encryption_key,
         )
     
+    @traced_action(
+        "Enregistrer un compte fictif",
+        "Le mot de passe et les notes sont chiffrés dans le coffre temporaire puis la liste est actualisée.",
+    )
     def _save_new_account(self, data: dict):
         """Sauvegarde un nouveau compte."""
         db.add_account(
@@ -470,6 +496,10 @@ class MainScreen(ctk.CTkFrame):
         self._scan_weak_passwords()
         self._show_toast(f"✅ « {data['name']} » ajouté !")
     
+    @traced_action(
+        "Ouvrir la modification d'un compte",
+        "Le formulaire doit afficher les données fictives du compte sélectionné.",
+    )
     def _edit_account(self, account: Account):
         """Ouvre le dialogue d'édition de compte."""
         categories = db.get_all_categories()
@@ -481,6 +511,10 @@ class MainScreen(ctk.CTkFrame):
             encryption_key=self.encryption_key,
         )
     
+    @traced_action(
+        "Modifier un compte fictif",
+        "Le compte est actualisé et l'ancien mot de passe est conservé dans l'historique si nécessaire.",
+    )
     def _save_edited_account(self, account_id: int, data: dict):
         """Sauvegarde les modifications d'un compte."""
         # V2 : sauvegarder l'ancien mot de passe dans l'historique
@@ -504,6 +538,10 @@ class MainScreen(ctk.CTkFrame):
         self._scan_weak_passwords()
         self._show_toast(f"✅ « {data['name']} » modifié !")
     
+    @traced_action(
+        "Supprimer un compte fictif",
+        "Une confirmation précède la suppression ; seul le coffre temporaire est concerné.",
+    )
     def _delete_account(self, account: Account):
         """Demande confirmation puis supprime un compte."""
         confirm = messagebox.askyesno(
@@ -523,6 +561,10 @@ class MainScreen(ctk.CTkFrame):
             on_save=self._save_new_category,
         )
     
+    @traced_action(
+        "Créer une catégorie fictive",
+        "La catégorie doit apparaître dans la navigation après enregistrement.",
+    )
     def _save_new_category(self, data: dict):
         """Sauvegarde une nouvelle catégorie."""
         db.add_category(data["name"], data["color"], data["icon"])
@@ -587,12 +629,20 @@ class MainScreen(ctk.CTkFrame):
             on_save=lambda data: self._save_edited_category(category.id, data),
         )
     
+    @traced_action(
+        "Modifier une catégorie fictive",
+        "Le nom, la couleur et l'icône sont enregistrés puis affichés dans la navigation.",
+    )
     def _save_edited_category(self, cat_id: int, data: dict):
         """Sauvegarde les modifications d'une catégorie."""
         db.update_category(cat_id, data["name"], data["color"], data["icon"])
         self._refresh_all()
         self._show_toast(f"📁 Catégorie « {data['name']} » modifiée !")
     
+    @traced_action(
+        "Supprimer une catégorie fictive",
+        "Une confirmation est demandée ; ses comptes restent présents sans catégorie.",
+    )
     def _delete_category(self, category: Category):
         """Supprime une catégorie."""
         confirm = messagebox.askyesno(
@@ -667,6 +717,10 @@ class MainScreen(ctk.CTkFrame):
     # V2 — Paramètres
     # ══════════════════════════════════════════════════════════════
 
+    @traced_action(
+        "Ouvrir les paramètres",
+        "La fenêtre des paramètres doit s'ouvrir au-dessus de l'écran principal.",
+    )
     def _open_settings(self):
         """Ouvre la fenêtre de paramètres."""
         from src.ui.settings_screen import SettingsScreen
@@ -675,6 +729,7 @@ class MainScreen(ctk.CTkFrame):
             encryption_key=self.encryption_key,
             on_master_password_changed=self._on_master_password_changed,
             on_theme_changed=self.apply_theme,
+            debug_console=self.debug_console,
         )
 
     def _on_master_password_changed(self, new_key: bytes):
@@ -686,6 +741,10 @@ class MainScreen(ctk.CTkFrame):
         if hasattr(master, "_show_login"):
             master._show_login()
 
+    @traced_action(
+        "Changer le thème",
+        "L'interface doit passer au thème clair ou sombre sans modifier les données.",
+    )
     def _toggle_theme(self):
         """Bascule le thème sombre/clair."""
         if self.on_theme_toggle:

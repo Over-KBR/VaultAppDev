@@ -55,7 +55,9 @@ Lancer l'application en mode debug sans demander de mot de passe maître :
 python main.py --debug
 ```
 
-Ce mode crée un coffre fictif dans un dossier temporaire, l'ouvre directement et supprime les données à la fermeture. Il n'utilise pas la base réelle, ne démarre pas l'API destinée à l'extension et désactive les copies dans le presse-papiers. Des comptes d'exemple permettent de tester l'audit, les doublons, la recherche, les catégories, l'historique et les formulaires. Dans les paramètres, le mot de passe maître initial fictif est `debug-only`.
+Ou, sous Windows, double-cliquer sur `Application/run_debug.bat` pour ouvrir une console dédiée qui reste visible après la fermeture.
+
+Ce mode crée un coffre fictif dans un dossier temporaire, l'ouvre directement et supprime les données à la fermeture. Il n'utilise pas la base réelle, ne démarre pas l'API destinée à l'extension et désactive les copies dans le presse-papiers. La console annonce chaque clic, décrit ce qui est attendu, affiche l'écran après le clic et imprime la trace des erreurs Tkinter non interceptées. Les erreurs déjà présentées par l'application restent également visibles dans ses boîtes de dialogue ou notifications. Des comptes d'exemple permettent de tester l'audit, les doublons, la recherche, les catégories, l'historique et les formulaires. Dans les paramètres, le mot de passe maître initial fictif est `debug-only`.
 
 Construire l'exécutable Windows :
 

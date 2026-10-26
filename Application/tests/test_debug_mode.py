@@ -1,6 +1,7 @@
 """Tests for the isolated, disposable debug vault."""
 
 import base64
+from types import SimpleNamespace
 
 from src.crypto import verify_master_password
 from src.database import (
@@ -10,6 +11,7 @@ from src.database import (
     get_setting,
 )
 from src.debug_data import DEBUG_MASTER_PASSWORD, create_debug_vault
+from src.debug_console import expected_result_for
 
 
 def test_debug_vault_uses_isolated_seeded_database(tmp_db):
@@ -32,3 +34,49 @@ def test_debug_vault_uses_isolated_seeded_database(tmp_db):
 
     old_account = next(account for account in accounts if account.name == "Demo obsolète")
     assert old_account.created_at[:10] < accounts[0].created_at[:10]
+
+
+def test_debug_console_describes_expected_click_results():
+    assert "formulaire d'ajout" in expected_result_for("＋ Ajouter").lower()
+    assert "bloquée" in expected_result_for("🔑 Copier").lower()
+    assert "confirmation" in expected_result_for("Supprimer").lower()
+    assert "mode debug" in expected_result_for("Option inconnue").lower()
+
+
+def test_debug_console_logs_click_and_expected_result(capsys):
+    from src.debug_console import DebugConsole
+
+    class FakeButton:
+        master = None
+
+        def cget(self, key):
+            return "＋ Ajouter un compte"
+
+    class FakeWindow:
+        def title(self):
+            return "VaultApp — MODE DEBUG"
+
+    class FakeRoot:
+        current_screen = SimpleNamespace()
+
+        def after_idle(self, callback):
+            callback()
+
+        def winfo_exists(self):
+            return True
+
+        def focus_get(self):
+            return SimpleNamespace(winfo_toplevel=lambda: FakeWindow())
+
+        def title(self):
+            return "VaultApp — MODE DEBUG"
+
+    console = DebugConsole.__new__(DebugConsole)
+    console.root = FakeRoot()
+    console._click_number = 0
+    console._on_click(SimpleNamespace(widget=FakeButton()))
+
+    output = capsys.readouterr().out
+    assert "[CLIC 001] ＋ Ajouter un compte" in output
+    assert "[ATTENDU] Un formulaire d'ajout doit s'ouvrir." in output
+    assert "[APRÈS CLIC]" in output

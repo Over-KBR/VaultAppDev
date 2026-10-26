@@ -20,6 +20,7 @@ Run commands from the `Application/` directory unless noted otherwise.
 - Launch the isolated disposable debug vault (no startup password prompt):
   - `python main.py --debug`
   - Uses a temporary `%APPDATA%` directory with fake data, does not start the browser API, and disables clipboard copies.
+  - On Windows, `Application/run_debug.bat` opens a dedicated console with click expectations and uncaught Tk callback errors.
 - Install Python dependencies:
   - `python -m pip install -r requirements.txt`
 - Full unit suite:

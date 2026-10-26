@@ -18,12 +18,13 @@ class SettingsScreen(ctk.CTkToplevel):
     """Fenêtre de paramètres."""
 
     def __init__(self, parent, encryption_key: bytes, on_master_password_changed=None,
-                 on_theme_changed=None, **kwargs):
+                 on_theme_changed=None, debug_console=None, **kwargs):
         super().__init__(parent, **kwargs)
 
         self.encryption_key = encryption_key
         self.on_master_password_changed = on_master_password_changed
         self.on_theme_changed = on_theme_changed
+        self.debug_console = debug_console
 
         self.title("Paramètres")
         self.geometry("520x640")
@@ -144,6 +145,8 @@ class SettingsScreen(ctk.CTkToplevel):
                 db.set_setting("auto_lock_minutes", str(mins))
             except ValueError:
                 pass
+        if self.debug_console:
+            self.debug_console.operation_succeeded("Enregistrement du délai de verrouillage")
 
     def _build_change_password(self, parent):
         """Formulaire de changement du mot de passe maître."""
@@ -235,12 +238,18 @@ class SettingsScreen(ctk.CTkToplevel):
             db.change_master_password(new_pwd, new_salt, new_hash,
                                       self.encryption_key, new_key)
         except Exception as e:
+            if self.debug_console:
+                self.debug_console.handled_error("Changement du mot de passe maître", e)
             return _err(f"Erreur : {e}")
 
         self._old_pwd_entry.delete(0, "end")
         self._new_pwd_entry.delete(0, "end")
         self._confirm_pwd_entry.delete(0, "end")
 
+        if self.debug_console:
+            self.debug_console.operation_succeeded(
+                "Changement du mot de passe maître et rechiffrement des données temporaires"
+            )
         messagebox.showinfo(
             "Succès",
             "Mot de passe maître changé.\nL'application va se verrouiller.",
@@ -291,6 +300,8 @@ class SettingsScreen(ctk.CTkToplevel):
         ctk2.set_appearance_mode(value)
         if self.on_theme_changed:
             self.on_theme_changed()
+        if self.debug_console:
+            self.debug_console.operation_succeeded("Enregistrement du thème")
 
     def _build_export_import(self, parent):
         """Export / import du coffre en fichier .vault chiffré."""
@@ -340,8 +351,12 @@ class SettingsScreen(ctk.CTkToplevel):
             return
         try:
             export_vault(path, self.encryption_key)
+            if self.debug_console:
+                self.debug_console.operation_succeeded("Export chiffré du coffre temporaire")
             messagebox.showinfo("Export réussi", f"Coffre exporté vers :\n{path}")
         except Exception as e:
+            if self.debug_console:
+                self.debug_console.handled_error("Export du coffre", e)
             messagebox.showerror("Erreur d'export", str(e))
 
     def _import_vault(self):
@@ -361,6 +376,10 @@ class SettingsScreen(ctk.CTkToplevel):
             return
         try:
             import_vault(path, self.encryption_key)
+            if self.debug_console:
+                self.debug_console.operation_succeeded("Import du coffre temporaire")
             messagebox.showinfo("Import réussi", "Coffre importé avec succès.")
         except Exception as e:
+            if self.debug_console:
+                self.debug_console.handled_error("Import du coffre", e)
             messagebox.showerror("Erreur d'import", str(e))

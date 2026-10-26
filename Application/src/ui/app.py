@@ -17,6 +17,7 @@ from src.history import init_password_history_table
 from src.ui.lock_screen import LockScreen
 from src.ui.welcome_screen import WelcomeScreen
 from src.api import vault_api
+from src.database import get_db_path, get_total_account_count
 
 
 class VaultApp(ctk.CTk):
@@ -29,6 +30,11 @@ class VaultApp(ctk.CTk):
 
         self.debug_mode = debug_mode
         self.debug_key = debug_key
+        self.debug_console = None
+        if self.debug_mode:
+            from src.debug_console import DebugConsole
+
+            self.debug_console = DebugConsole(self)
         
         # ── Configuration de la fenêtre ──
         self.title("VaultApp — Gestionnaire de mots de passe")
@@ -63,6 +69,7 @@ class VaultApp(ctk.CTk):
 
         if self.debug_mode:
             self.title("VaultApp — MODE DEBUG (coffre temporaire)")
+            self.debug_console.startup(get_total_account_count(), get_db_path())
             self._show_main(self.debug_key)
         else:
             self._show_welcome()
