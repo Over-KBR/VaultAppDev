@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultApp</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 320px;
+      min-height: 200px;
+      background: #0f0f13;
+      color: #e4e4ed;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid #2a2a3a;
+    }
+    .header-icon { font-size: 20px; }
+    .header-title { font-size: 15px; font-weight: 600; }
+    .header-domain {
+      margin-left: auto;
+      font-size: 11px;
+      color: #5e5e72;
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── États ── */
+    .state {
+      display: none;
+      padding: 24px 16px;
+      text-align: center;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .state.active { display: flex; }
+
+    .state-icon { font-size: 32px; }
+    .state-title { font-size: 14px; font-weight: 600; color: #e4e4ed; }
+    .state-subtitle { font-size: 12px; color: #5e5e72; line-height: 1.5; }
+
+    /* ── Liste des comptes ── */
+    #accounts-list { padding: 8px; display: none; }
+    #accounts-list.active { display: block; }
+
+    .account-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .account-item:hover { background: #1e1e2e; }
+    .account-item:active { background: #252533; }
+
+    .account-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .account-info { flex: 1; overflow: hidden; }
+    .account-name {
+      font-weight: 600;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .account-login {
+      font-size: 11px;
+      color: #5e5e72;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .fill-btn {
+      background: #7c5cfc;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.12s;
+    }
+    .fill-btn:hover { background: #6a4bea; }
+    .fill-btn:active { background: #5a3dd8; }
+
+    /* ── Séparateur ── */
+    .section-label {
+      padding: 8px 12px 4px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #5e5e72;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a1a24;
+      border: 1px solid #2a2a3a;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      display: none;
+      white-space: nowrap;
+      z-index: 999;
+    }
+    .toast.show { display: block; }
+
+    /* ── Footer ── */
+    .footer {
+      padding: 8px 12px 10px;
+      border-top: 1px solid #2a2a3a;
+      text-align: center;
+    }
+    .open-app-btn {
+      background: transparent;
+      color: #5e5e72;
+      border: 1px solid #2a2a3a;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .open-app-btn:hover { color: #e4e4ed; border-color: #3a3a4a; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <span class="header-icon">🔐</span>
+    <span class="header-title">VaultApp</span>
+    <span class="header-domain" id="current-domain">—</span>
+  </div>
+
+  <!-- État : chargement -->
+  <div class="state active" id="state-loading">
+    <span class="state-icon">⏳</span>
+    <span class="state-title">Connexion à VaultApp...</span>
+  </div>
+
+  <!-- État : app non lancée -->
+  <div class="state" id="state-not-running">
+    <span class="state-icon">💤</span>
+    <span class="state-title">VaultApp n'est pas lancée</span>
+    <span class="state-subtitle">Lance VaultApp sur ton ordinateur<br>puis réessaie.</span>
+  </div>
+
+  <!-- État : verrouillée -->
+  <div class="state" id="state-locked">
+    <span class="state-icon">🔒</span>
+    <span class="state-title">VaultApp est verrouillée</span>
+    <span class="state-subtitle">Déverrouille l'application<br>avec ton mot de passe maître.</span>
+  </div>
+
+  <!-- État : aucun compte trouvé -->
+  <div class="state" id="state-empty">
+    <span class="state-icon">🔍</span>
+    <span class="state-title">Aucun compte trouvé</span>
+    <span class="state-subtitle">Aucun compte enregistré<br>pour ce site dans VaultApp.</span>
+  </div>
+
+  <!-- Liste des comptes -->
+  <div id="accounts-list">
+    <div class="section-label" id="accounts-label">Comptes disponibles</div>
+    <div id="accounts-items"></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer" id="footer" style="display:none">
+    <button class="open-app-btn" id="open-app-btn">Ouvrir VaultApp</button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
