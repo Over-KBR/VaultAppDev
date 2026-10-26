@@ -75,14 +75,14 @@ python build.py
 - Au démarrage, `VaultApp` initialise la base et la table d'historique, charge le thème enregistré, puis démarre le serveur Flask avant le déverrouillage. Tant que le coffre est verrouillé, l'API connaît l'état verrouillé mais ne possède pas la clé.
 - L'utilisateur passe par l'écran d'accueil, puis par l'écran de connexion/création (`welcome_screen.py`, `login_screen.py`). Après déverrouillage, `main_screen.py` affiche les comptes et les catégories.
 - Le verrouillage automatique est réglé dans les paramètres, vaut cinq minutes par défaut, et est réinitialisé par les événements souris/clavier. Le verrouillage retire la clé de l'API.
-- L'écran principal contient une liste filtrable de comptes, les catégories, un audit de sécurité et l'accès aux paramètres.
+- L'écran principal contient une liste filtrable de comptes, une vue Favoris, les catégories, un audit de sécurité et l'accès aux paramètres.
 
 ### Modules et responsabilités
 
 - `src/ui/` : fenêtre, écrans, dialogues et widgets CustomTkinter.
 - `src/ui/theme.py` : couleurs sombre/clair, polices, dimensions et gestionnaire de thème partagé.
 - `src/models.py` : dataclasses `Account` et `Category`, ainsi que les palettes/icônes de catégorie.
-- `src/database.py` : schéma SQLite, accès aux comptes/catégories/paramètres et changement de mot de passe maître.
+- `src/database.py` : schéma SQLite, migration des colonnes, accès aux comptes/catégories/paramètres et changement de mot de passe maître.
 - `src/crypto.py` : dérivation de clé, vérification du mot de passe maître et chiffrement/déchiffrement.
 - `src/history.py` : anciennes versions de mots de passe chiffrées.
 - `src/generator.py` et `src/strength.py` : génération et analyse de la force des mots de passe, calcul du score du coffre.
@@ -97,7 +97,7 @@ python build.py
 - Au premier lancement, un sel aléatoire et une valeur de vérification dérivée du mot de passe maître sont enregistrés dans la table `config`. Les catégories par défaut sont également créées.
 - La clé est dérivée par PBKDF2-HMAC-SHA256 avec 600 000 itérations, une clé de 32 octets et un sel de 16 octets.
 - Chaque valeur chiffrée utilise AES-GCM et un nonce aléatoire de 12 octets.
-- Les mots de passe et les notes des comptes sont chiffrés dans SQLite. Les noms, logins, URL, métadonnées de catégories et paramètres ne le sont pas : ne pas supposer que l'ensemble de la base est chiffré.
+- Les mots de passe, notes et secrets TOTP des comptes sont chiffrés dans SQLite. Les noms, logins, URL, métadonnées de catégories et paramètres ne le sont pas : ne pas supposer que l'ensemble de la base est chiffré.
 - Les tests utilisent `tmp_db` et `db_with_data` dans `tests/conftest.py`. Ces fixtures redirigent la base vers un fichier temporaire et initialisent les tables requises. Ne jamais faire pointer les tests vers le coffre réel de `%APPDATA%`.
 
 ### Changement du mot de passe maître
@@ -110,8 +110,11 @@ Le changement de mot de passe maître est une opération dépendante de la clé 
 - L'audit du tableau de bord (`dashboard_screen.py`) signale les mots de passe faibles, réutilisés et inchangés depuis plus de 180 jours. Le score est calculé par `calculate_vault_score()` dans `strength.py`.
 - `zxcvbn` est utilisé si disponible ; un score heuristique de secours est prévu sinon.
 - Le générateur s'appuie sur `secrets` et assure la présence d'au moins un caractère de chaque groupe activé.
-- Copier un mot de passe programme son effacement du presse-papiers après 30 secondes. Copier un identifiant (login) ne programme pas cet effacement.
+- `src/totp.py` génère localement des codes RFC 6238 à six chiffres, valables 30 secondes. Les secrets Base32 sont chiffrés dans SQLite, migrés lors de l'initialisation et préservés dans les exports `.vault` ainsi que lors du changement de mot de passe maître. Ils ne doivent jamais être renvoyés par l'API navigateur.
+- Le délai d'effacement du presse-papiers est réglable sur 15, 30 ou 60 secondes. Il s'applique aux mots de passe et aux identifiants copiés depuis la liste ou le formulaire.
+- Un compte peut conserver une clé TOTP Base32. Le code à six chiffres reste affiché au maximum jusqu'à son expiration, sa copie est automatiquement effacée du presse-papiers au plus tard à cette échéance, et le mode debug bloque la copie comme pour les mots de passe.
 - Les exports `.vault` ont l'en-tête `VAULT2` et contiennent un JSON chiffré avec AES-GCM. L'import remplace les comptes et catégories ; les paramètres et les informations du mot de passe maître ne sont pas dans l'export.
+- L'état Favori est une métadonnée SQLite associée au compte et fait partie de l'export chiffré `.vault`. Toute nouvelle colonne doit être ajoutée via une migration non destructive dans `init_database()` et couverte par un test d'import/export.
 
 ## Contrat entre l'application et l'extension
 

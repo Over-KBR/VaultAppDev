@@ -45,6 +45,9 @@ class Account:
     category_icon: str = "🔑"      # Icône de la catégorie (pour l'affichage)
     created_at: str = ""            # Date de création
     updated_at: str = ""            # Date de dernière modification
+    favorite: bool = False          # Compte épinglé dans les favoris
+    totp_secret: str = ""           # Secret TOTP déchiffré en mémoire
+    totp_secret_error: bool = False # Indique un secret TOTP illisible en base
 
 
 # ══════════════════════════════════════════════════════════════

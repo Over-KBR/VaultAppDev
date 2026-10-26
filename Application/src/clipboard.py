@@ -9,6 +9,16 @@ import threading
 import pyperclip
 
 
+def get_clipboard_clear_seconds() -> int:
+    """Retourne le délai configuré avant l'effacement du presse-papiers."""
+    from src.database import get_setting
+
+    seconds = int(get_setting("clipboard_clear_seconds", "30"))
+    if seconds not in (15, 30, 60):
+        raise ValueError("Le délai d'effacement du presse-papiers est invalide.")
+    return seconds
+
+
 def copy_to_clipboard(text: str, clear_after_seconds: int = 30):
     """
     Copie un texte dans le presse-papier.

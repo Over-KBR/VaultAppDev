@@ -13,88 +13,62 @@ Chaque couleur est pensée pour être agréable à l'œil et cohérente.
 
 THEMES = {
     "dark": {
-        # Arrière-plans
-        "bg_primary": "#0f0f13",         # Fond principal (très sombre)
-        "bg_secondary": "#1a1a24",       # Sidebar, cartes
-        "bg_tertiary": "#252533",        # Champs de saisie, survol
-        "bg_hover": "#2d2d3f",           # Survol des éléments
-        "bg_active": "#363649",          # Élément sélectionné
-        "bg_card": "#1e1e2e",            # Cartes de comptes
-        "bg_dialog": "#1a1a24",          # Fond des dialogues
-        "bg_input": "#252533",           # Champs de texte
-        
-        # Texte
-        "text_primary": "#e4e4ed",       # Texte principal
-        "text_secondary": "#9494a8",     # Texte secondaire / labels
-        "text_muted": "#5e5e72",         # Texte très discret
-        "text_on_accent": "#ffffff",     # Texte sur bouton accent
-        
-        # Accent (violet/indigo)
-        "accent": "#7c5cfc",             # Couleur principale
-        "accent_hover": "#6a4bea",       # Survol accent
-        "accent_light": "#1d173d",       # Accent mélangé (solide)
-        "accent_glow": "#2a1e5c",        # Lueur mélangée (solide)
-        
-        # États
-        "success": "#22c55e",
-        "warning": "#eab308",
-        "error": "#ef4444",
-        "error_light": "#2e141c",       # Rouge mélangé (solide)
-        "info": "#3b82f6",
-        
-        # Bordures
-        "border": "#2a2a3a",
-        "border_light": "#353548",
-        "border_focus": "#7c5cfc",
-        
-        # Scrollbar
-        "scrollbar": "#353548",
-        "scrollbar_hover": "#454558",
-        
-        # Ombres (effet glassmorphism)
-        "shadow": "#00000060",
+        "bg_primary": "#111318",
+        "bg_secondary": "#171a21",
+        "bg_tertiary": "#222630",
+        "bg_hover": "#252a35",
+        "bg_active": "#2d3340",
+        "bg_card": "#191d25",
+        "bg_dialog": "#191d25",
+        "bg_input": "#11151b",
+        "text_primary": "#f4f6fa",
+        "text_secondary": "#b6bdca",
+        "text_muted": "#858e9e",
+        "text_on_accent": "#ffffff",
+        "accent": "#70aaff",
+        "accent_hover": "#8bbaff",
+        "accent_light": "#202f48",
+        "accent_glow": "#293d5a",
+        "success": "#54d68a",
+        "warning": "#f0bd62",
+        "error": "#ff7777",
+        "error_light": "#39272d",
+        "info": "#75c8ee",
+        "border": "#292e38",
+        "border_light": "#39414e",
+        "border_focus": "#70aaff",
+        "scrollbar": "#4b5361",
+        "scrollbar_hover": "#687284",
+        "shadow": "#00000040",
     },
     "light": {
-        # Arrière-plans
-        "bg_primary": "#f5f5f9",
-        "bg_secondary": "#ffffff",
-        "bg_tertiary": "#eeeef4",
-        "bg_hover": "#e8e8f0",
-        "bg_active": "#dedee8",
+        "bg_primary": "#f4f5f7",
+        "bg_secondary": "#fafbfc",
+        "bg_tertiary": "#edf0f4",
+        "bg_hover": "#e9edf3",
+        "bg_active": "#dfe6f0",
         "bg_card": "#ffffff",
         "bg_dialog": "#ffffff",
-        "bg_input": "#f0f0f6",
-        
-        # Texte
-        "text_primary": "#1a1a2e",
-        "text_secondary": "#6b6b80",
-        "text_muted": "#9e9eb0",
+        "bg_input": "#f7f8fa",
+        "text_primary": "#1b2028",
+        "text_secondary": "#596272",
+        "text_muted": "#858e9c",
         "text_on_accent": "#ffffff",
-        
-        # Accent
-        "accent": "#6c4feb",
-        "accent_hover": "#5a3dd8",
-        "accent_light": "#f1edfd",       # Accent mélangé (solide)
-        "accent_glow": "#e6dbfa",        # Lueur mélangée (solide)
-        
-        # États
-        "success": "#16a34a",
-        "warning": "#ca8a04",
-        "error": "#dc2626",
-        "error_light": "#fcecee",       # Rouge mélangé (solide)
-        "info": "#2563eb",
-        
-        # Bordures
-        "border": "#e2e2ec",
-        "border_light": "#ededf4",
-        "border_focus": "#6c4feb",
-        
-        # Scrollbar
-        "scrollbar": "#d0d0dc",
-        "scrollbar_hover": "#b8b8c8",
-        
-        # Ombres
-        "shadow": "#00000015",
+        "accent": "#246bce",
+        "accent_hover": "#1d5db7",
+        "accent_light": "#e9f1fd",
+        "accent_glow": "#dbe8fb",
+        "success": "#16834f",
+        "warning": "#a86a00",
+        "error": "#c73d4b",
+        "error_light": "#fbecef",
+        "info": "#24719a",
+        "border": "#e2e6ec",
+        "border_light": "#d4dbe5",
+        "border_focus": "#246bce",
+        "scrollbar": "#c4cbd5",
+        "scrollbar_hover": "#a9b3c1",
+        "shadow": "#1e293b12",
     }
 }
 
@@ -135,41 +109,111 @@ def blend_colors(fg_color, bg_color, alpha: float):
 # ══════════════════════════════════════════════════════════════
 
 FONTS = {
-    "heading_xl": ("Segoe UI", 28, "bold"),
-    "heading_lg": ("Segoe UI", 22, "bold"),
-    "heading": ("Segoe UI", 18, "bold"),
-    "heading_sm": ("Segoe UI", 15, "bold"),
-    "body": ("Segoe UI", 13),
-    "body_bold": ("Segoe UI", 13, "bold"),
-    "body_sm": ("Segoe UI", 11),
-    "body_sm_bold": ("Segoe UI", 11, "bold"),
-    "caption": ("Segoe UI", 10),
-    "icon_lg": ("Segoe UI Emoji", 24),
-    "icon": ("Segoe UI Emoji", 18),
-    "icon_sm": ("Segoe UI Emoji", 14),
+    "heading_xl": ("Segoe UI Variable Display", 32, "bold"),
+    "heading_lg": ("Segoe UI Variable Display", 27, "bold"),
+    "heading": ("Segoe UI Variable Display", 24, "bold"),
+    "heading_sm": ("Segoe UI Variable Text", 17, "bold"),
+    "body_lg": ("Segoe UI Variable Text", 15),
+    "body": ("Segoe UI Variable Text", 14),
+    "body_bold": ("Segoe UI Variable Text", 14, "bold"),
+    "body_sm": ("Segoe UI Variable Text", 13),
+    "body_sm_bold": ("Segoe UI Variable Text", 13, "bold"),
+    "caption": ("Segoe UI Variable Text", 11),
+    "label": ("Segoe UI Variable Text", 10, "bold"),
     "mono": ("Consolas", 13),
 }
 
+SPACING = {
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 18,
+    "xl": 24,
+    "xxl": 32,
+}
+
+MOTION = {
+    "fast_ms": 90,
+    "standard_ms": 160,
+    "emphasis_ms": 220,
+    "reduced": False,
+}
+
+BUTTON_STYLES = {
+    "primary": ("accent", "accent_hover", "text_on_accent", None),
+    "secondary": ("bg_tertiary", "bg_hover", "text_primary", "border"),
+    "quiet": ("transparent", "bg_hover", "text_secondary", None),
+    "destructive": ("error_light", "error", "error", None),
+}
+
+
+def button_style(variant="secondary", height=None, corner_radius=None):
+    """Options cohérentes pour les boutons CustomTkinter."""
+    if variant not in BUTTON_STYLES:
+        raise ValueError(f"Style de bouton inconnu : {variant}")
+    fg, hover, text, border = BUTTON_STYLES[variant]
+    style = {
+        "fg_color": "transparent" if fg == "transparent" else theme.get(fg),
+        "hover_color": theme.get(hover),
+        "text_color": theme.get(text),
+        "border_width": 1 if border else 0,
+    }
+    if border:
+        style["border_color"] = theme.get(border)
+    if height is not None:
+        style["height"] = height
+    style["corner_radius"] = (
+        corner_radius if corner_radius is not None
+        else DIMENSIONS["corner_radius_sm"]
+    )
+    return style
+
+
+def entry_style(height=None):
+    """Options cohérentes pour les champs de saisie CustomTkinter."""
+    style = {
+        "fg_color": theme.get("bg_input"),
+        "border_color": theme.get("border"),
+        "text_color": theme.get("text_primary"),
+        "placeholder_text_color": theme.get("text_muted"),
+        "corner_radius": DIMENSIONS["corner_radius_sm"],
+        "height": height if height is not None else DIMENSIONS["input_height"],
+    }
+    return style
+
+
+def bind_entry_focus(entry):
+    """Affiche un contour accentué lorsque le champ reçoit le focus clavier."""
+    entry.bind(
+        "<FocusIn>",
+        lambda _event: entry.configure(border_color=theme.get("border_focus")),
+        add="+",
+    )
+    entry.bind(
+        "<FocusOut>",
+        lambda _event: entry.configure(border_color=theme.get("border")),
+        add="+",
+    )
 
 # ══════════════════════════════════════════════════════════════
 # Dimensions
 # ══════════════════════════════════════════════════════════════
 
 DIMENSIONS = {
-    "window_width": 1100,
-    "window_height": 720,
-    "sidebar_width": 260,
-    "card_height": 80,
+    "window_width": 1240,
+    "window_height": 800,
+    "sidebar_width": 244,
+    "card_height": 82,
     "corner_radius": 12,
     "corner_radius_sm": 8,
     "corner_radius_lg": 16,
-    "padding": 16,
+    "padding": 18,
     "padding_sm": 8,
     "padding_lg": 24,
     "padding_xl": 32,
-    "button_height": 40,
-    "input_height": 42,
-    "icon_size": 40,
+    "button_height": 42,
+    "input_height": 44,
+    "icon_size": 42,
 }
 
 

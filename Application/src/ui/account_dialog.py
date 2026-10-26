@@ -11,19 +11,29 @@ Nouveautés V2 :
 import customtkinter as ctk
 from tkinter import messagebox
 from typing import Optional, List
-from src.ui.theme import theme, FONTS, DIMENSIONS
+from src.ui.after_callbacks import AfterCallbackMixin
+from src.ui.theme import (
+    theme,
+    FONTS,
+    DIMENSIONS,
+    bind_entry_focus,
+    button_style,
+    entry_style,
+)
+from src.ui.icons import IconButton
 from src.models import Account, Category
 from src.strength import analyze_password
 from src.generator import generate_password
 
 
-class AccountDialog(ctk.CTkToplevel):
+class AccountDialog(AfterCallbackMixin, ctk.CTkToplevel):
     """Dialogue pour ajouter ou modifier un compte."""
 
     def __init__(self, parent, categories: List[Category],
                  account: Optional[Account] = None, on_save=None,
                  encryption_key: bytes = None, **kwargs):
         super().__init__(parent, **kwargs)
+        self._init_after_callbacks()
 
         self.account = account
         self.categories = categories
@@ -47,7 +57,11 @@ class AccountDialog(ctk.CTkToplevel):
         self.grab_set()
 
         self._build()
-        self.after(100, lambda: self.name_entry.focus_set())
+        self._schedule_after(100, lambda: self.name_entry.focus_set())
+
+    def destroy(self):
+        self._cancel_after_callbacks()
+        super().destroy()
 
     # ──────────────────────────────────────────────────────────
     # Construction de l'UI
@@ -58,7 +72,7 @@ class AccountDialog(ctk.CTkToplevel):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=28, pady=(24, 16))
 
-        title_text = "✏️  Modifier le compte" if self.account else "➕  Nouveau compte"
+        title_text = "Modifier le compte" if self.account else "Nouveau compte"
         ctk.CTkLabel(
             header, text=title_text,
             font=FONTS["heading_sm"],
@@ -88,6 +102,9 @@ class AccountDialog(ctk.CTkToplevel):
         # ── Mot de passe ──
         self._build_password_section(form)
 
+        # ── Vérification en deux étapes ──
+        self._build_totp_section(form)
+
         # ── URL ──
         self.url_entry = self._create_field(
             form, "URL du site", "Ex : https://netflix.com",
@@ -111,23 +128,16 @@ class AccountDialog(ctk.CTkToplevel):
         ctk.CTkButton(
             btn_frame, text="Annuler",
             font=FONTS["body"],
-            fg_color="transparent",
-            hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_secondary"),
-            border_width=1, border_color=theme.get("border"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["button_height"], width=120,
+            width=120,
+            **button_style("secondary", height=DIMENSIONS["button_height"]),
             command=self.destroy,
         ).pack(side="left")
 
         ctk.CTkButton(
-            btn_frame, text="💾  Sauvegarder",
+            btn_frame, text="Sauvegarder",
             font=FONTS["body_bold"],
-            fg_color=theme.get("accent"),
-            hover_color=theme.get("accent_hover"),
-            text_color=theme.get("text_on_accent"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["button_height"], width=160,
+            width=160,
+            **button_style("primary", height=DIMENSIONS["button_height"]),
             command=self._on_save,
         ).pack(side="right")
 
@@ -146,13 +156,13 @@ class AccountDialog(ctk.CTkToplevel):
         ).pack(side="left")
 
         ctk.CTkButton(
-            label_row, text="🎲 Générer",
+            label_row, text="Générer",
             font=FONTS["caption"],
             fg_color=theme.get("accent_light"),
             hover_color=theme.get("accent_glow"),
             text_color=theme.get("accent"),
             corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=24, width=90,
+            height=28, width=84,
             command=self._open_generator,
         ).pack(side="right")
 
@@ -164,30 +174,28 @@ class AccountDialog(ctk.CTkToplevel):
             pwd_input_row,
             placeholder_text="••••••••",
             font=FONTS["mono"],
-            fg_color=theme.get("bg_input"),
-            border_color=theme.get("border"),
-            text_color=theme.get("text_primary"),
-            placeholder_text_color=theme.get("text_muted"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["input_height"],
             show="•",
+            **entry_style(),
         )
         self.password_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        bind_entry_focus(self.password_entry)
 
         if self.account and self.account.password:
             self.password_entry.insert(0, self.account.password)
 
         self._pwd_visible = False
-        self.toggle_pwd_btn = ctk.CTkButton(
-            pwd_input_row, text="👁️",
-            font=FONTS["icon_sm"],
+        self.toggle_pwd_btn = IconButton(
+            pwd_input_row,
+            "eye",
+            command=self._toggle_password,
+            color="text_secondary",
+            background="bg_tertiary",
             width=42, height=DIMENSIONS["input_height"],
             corner_radius=DIMENSIONS["corner_radius_sm"],
             fg_color=theme.get("bg_tertiary"),
             hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_secondary"),
-            command=self._toggle_password,
         )
+        self.toggle_pwd_btn.button.accessible_name = "Afficher le mot de passe"
         self.toggle_pwd_btn.pack(side="right")
 
         # ── Barre de force ──
@@ -243,7 +251,69 @@ class AccountDialog(ctk.CTkToplevel):
         self.password_entry.bind("<KeyRelease>", self._update_strength)
         # Initialiser si édition
         if self.account and self.account.password:
-            self.after(50, self._update_strength)
+            self._schedule_after(50, self._update_strength)
+
+    def _build_totp_section(self, parent):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(fill="x", pady=(0, 14))
+
+        ctk.CTkLabel(
+            frame,
+            text="Secret TOTP (facultatif)",
+            font=FONTS["body_sm_bold"],
+            text_color=theme.get("text_secondary"),
+        ).pack(anchor="w", pady=(0, 6))
+
+        row = ctk.CTkFrame(frame, fg_color="transparent")
+        row.pack(fill="x")
+        self.totp_entry = ctk.CTkEntry(
+            row,
+            placeholder_text="Clé Base32 fournie par le site",
+            font=FONTS["mono"],
+            show="•",
+            **entry_style(),
+        )
+        self.totp_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        bind_entry_focus(self.totp_entry)
+        if self.account and self.account.totp_secret:
+            self.totp_entry.insert(0, self.account.totp_secret)
+
+        self._totp_visible = False
+        self._totp_toggle_btn = IconButton(
+            row,
+            "eye",
+            command=self._toggle_totp_secret,
+            color="text_secondary",
+            background="bg_tertiary",
+            width=42,
+            height=DIMENSIONS["input_height"],
+            corner_radius=DIMENSIONS["corner_radius_sm"],
+            fg_color=theme.get("bg_tertiary"),
+            hover_color=theme.get("bg_hover"),
+        )
+        self._totp_toggle_btn.button.accessible_name = "Afficher la clé de vérification"
+        self._totp_toggle_btn.pack(side="right")
+        ctk.CTkLabel(
+            frame,
+            text=(
+                "Secret TOTP illisible : entre une nouvelle clé valide avant de sauvegarder."
+                if self.account and self.account.totp_secret_error
+                else "VaultApp le chiffre dans le coffre ; aucun service externe n'est utilisé."
+            ),
+            font=FONTS["caption"],
+            text_color=(
+                theme.get("error")
+                if self.account and self.account.totp_secret_error
+                else theme.get("text_muted")
+            ),
+            anchor="w",
+        ).pack(anchor="w", pady=(4, 0))
+
+    def _toggle_totp_secret(self):
+        self._totp_visible = not self._totp_visible
+        self.totp_entry.configure(show="" if self._totp_visible else "•")
+        self._totp_toggle_btn.icon.name = "eye_off" if self._totp_visible else "eye"
+        self._totp_toggle_btn.icon.refresh()
 
     def _build_category_section(self, parent):
         cat_frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -255,13 +325,13 @@ class AccountDialog(ctk.CTkToplevel):
             text_color=theme.get("text_secondary"),
         ).pack(anchor="w", pady=(0, 6))
 
-        cat_options = ["Sans catégorie"] + [f"{c.icon} {c.name}" for c in self.categories]
+        cat_options = ["Sans catégorie"] + [c.name for c in self.categories]
 
         current_cat = "Sans catégorie"
         if self.account and self.account.category_id:
             for c in self.categories:
                 if c.id == self.account.category_id:
-                    current_cat = f"{c.icon} {c.name}"
+                    current_cat = c.name
                     break
 
         self.category_var = ctk.StringVar(value=current_cat)
@@ -354,16 +424,21 @@ class AccountDialog(ctk.CTkToplevel):
             def _toggle(lbl=pwd_label, p=entry["password"], v=visible):
                 v[0] = not v[0]
                 lbl.configure(text=p if v[0] else "••••••••••••")
+                eye_button.icon.name = "eye_off" if v[0] else "eye"
+                eye_button.icon.refresh()
 
-            ctk.CTkButton(
-                row, text="👁",
-                font=FONTS["caption"],
+            eye_button = IconButton(
+                row,
+                "eye",
+                command=_toggle,
+                color="text_muted",
+                background="bg_input",
                 width=28, height=28,
                 fg_color="transparent",
                 hover_color=theme.get("bg_hover"),
-                text_color=theme.get("text_muted"),
-                command=_toggle,
-            ).pack(side="right", padx=2)
+            )
+            eye_button.button.accessible_name = "Afficher une ancienne valeur"
+            eye_button.pack(side="right", padx=2)
 
     # ──────────────────────────────────────────────────────────
     # Indicateur de force
@@ -405,7 +480,9 @@ class AccountDialog(ctk.CTkToplevel):
         self.password_entry.delete(0, "end")
         self.password_entry.insert(0, password)
         self._pwd_visible = True
-        self.toggle_pwd_btn.configure(text="🔒")
+        self.toggle_pwd_btn.icon.name = "eye_off"
+        self.toggle_pwd_btn.icon.refresh()
+        self.toggle_pwd_btn.button.accessible_name = "Masquer le mot de passe"
         self._update_strength()
 
     # ──────────────────────────────────────────────────────────
@@ -426,14 +503,10 @@ class AccountDialog(ctk.CTkToplevel):
             frame,
             placeholder_text=placeholder,
             font=FONTS["body"],
-            fg_color=theme.get("bg_input"),
-            border_color=theme.get("border"),
-            text_color=theme.get("text_primary"),
-            placeholder_text_color=theme.get("text_muted"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["input_height"],
+            **entry_style(),
         )
         entry.pack(fill="x")
+        bind_entry_focus(entry)
         if value:
             entry.insert(0, value)
         return entry
@@ -441,14 +514,20 @@ class AccountDialog(ctk.CTkToplevel):
     def _toggle_password(self):
         self._pwd_visible = not self._pwd_visible
         self.password_entry.configure(show="" if self._pwd_visible else "•")
-        self.toggle_pwd_btn.configure(text="🔒" if self._pwd_visible else "👁️")
+        self.toggle_pwd_btn.icon.name = "eye_off" if self._pwd_visible else "eye"
+        self.toggle_pwd_btn.icon.refresh()
+        self.toggle_pwd_btn.button.accessible_name = (
+            "Masquer le mot de passe"
+            if self._pwd_visible
+            else "Afficher le mot de passe"
+        )
 
     def _get_selected_category_id(self) -> Optional[int]:
         selected = self.category_var.get()
         if selected == "Sans catégorie":
             return None
         for cat in self.categories:
-            if f"{cat.icon} {cat.name}" == selected:
+            if cat.name == selected:
                 return cat.id
         return None
 
@@ -456,7 +535,24 @@ class AccountDialog(ctk.CTkToplevel):
         name = self.name_entry.get().strip()
         if not name:
             self.name_entry.configure(border_color=theme.get("error"))
-            self.after(2000, lambda: self.name_entry.configure(border_color=theme.get("border")))
+            self._schedule_after(
+                2000,
+                lambda: self.name_entry.configure(border_color=theme.get("border")),
+            )
+            return
+
+        from src.totp import normalize_totp_secret
+        try:
+            totp_secret = normalize_totp_secret(self.totp_entry.get())
+        except ValueError as exc:
+            messagebox.showerror("Secret TOTP invalide", str(exc), parent=self)
+            return
+        if self.account and self.account.totp_secret_error and not totp_secret:
+            messagebox.showerror(
+                "Secret TOTP illisible",
+                "Entre une nouvelle clé TOTP valide avant de sauvegarder ce compte.",
+                parent=self,
+            )
             return
 
         self.result = {
@@ -466,6 +562,7 @@ class AccountDialog(ctk.CTkToplevel):
             "url": self.url_entry.get().strip(),
             "notes": self.notes_text.get("1.0", "end-1c").strip(),
             "category_id": self._get_selected_category_id(),
+            "totp_secret": totp_secret,
         }
         if self.on_save:
             self.on_save(self.result)
@@ -509,7 +606,7 @@ class GeneratorPopup(ctk.CTkToplevel):
         pad = dict(padx=24)
 
         ctk.CTkLabel(
-            self, text="🎲 Générateur de mot de passe",
+            self, text="Générateur de mot de passe",
             font=FONTS["heading_sm"],
             text_color=theme.get("text_primary"),
         ).pack(anchor="w", pady=(24, 16), **pad)
@@ -536,15 +633,17 @@ class GeneratorPopup(ctk.CTkToplevel):
         )
         self._preview_label.pack(side="left", fill="x", expand=True)
 
-        ctk.CTkButton(
-            inner, text="📋",
-            font=FONTS["icon_sm"],
+        copy_button = IconButton(
+            inner,
+            "copy",
+            command=self._copy_password,
+            color="text_secondary",
+            background="bg_input",
             width=34, height=34,
             fg_color="transparent",
             hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_secondary"),
-            command=self._copy_password,
-        ).pack(side="right", padx=(0, 8))
+        )
+        copy_button.pack(side="right", padx=(0, 8))
 
         # ── Barre de force ──
         str_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -634,7 +733,7 @@ class GeneratorPopup(ctk.CTkToplevel):
         btn_frame.pack(fill="x", pady=(20, 24), **pad)
 
         ctk.CTkButton(
-            btn_frame, text="🔄 Régénérer",
+            btn_frame, text="Régénérer",
             font=FONTS["body"],
             fg_color=theme.get("bg_tertiary"),
             hover_color=theme.get("bg_hover"),
@@ -645,13 +744,9 @@ class GeneratorPopup(ctk.CTkToplevel):
         ).pack(side="left")
 
         ctk.CTkButton(
-            btn_frame, text="✅ Utiliser ce mot de passe",
+            btn_frame, text="Utiliser ce mot de passe",
             font=FONTS["body_bold"],
-            fg_color=theme.get("accent"),
-            hover_color=theme.get("accent_hover"),
-            text_color=theme.get("text_on_accent"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["button_height"],
+            **button_style("primary", height=DIMENSIONS["button_height"]),
             command=self._use,
         ).pack(side="right")
 
@@ -687,8 +782,11 @@ class GeneratorPopup(ctk.CTkToplevel):
 
     def _copy_password(self):
         if self._current_pwd:
-            from src.clipboard import copy_to_clipboard
-            copy_to_clipboard(self._current_pwd, clear_after_seconds=0)
+            from src.clipboard import copy_to_clipboard, get_clipboard_clear_seconds
+            copy_to_clipboard(
+                self._current_pwd,
+                clear_after_seconds=get_clipboard_clear_seconds(),
+            )
 
     def _use(self):
         if self._current_pwd and self.on_use:

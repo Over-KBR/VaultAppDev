@@ -1,5 +1,6 @@
 import customtkinter as ctk
-from src.ui.theme import theme, FONTS, DIMENSIONS
+from src.ui.theme import theme, FONTS, DIMENSIONS, button_style
+from src.ui.icons import Icon
 
 
 class LockScreen(ctk.CTkFrame):
@@ -17,45 +18,66 @@ class LockScreen(ctk.CTkFrame):
 
         card = ctk.CTkFrame(
             self,
-            fg_color=theme.get("bg_secondary"),
-            corner_radius=24,
+            fg_color=theme.get("bg_card"),
+            corner_radius=DIMENSIONS["corner_radius_lg"],
             border_width=1,
             border_color=theme.get("border"),
+            width=380,
+            height=350,
         )
-        card.grid(row=1, column=0, padx=40, pady=40, sticky="nsew")
+        card.grid_propagate(False)
+        card.grid(row=1, column=0, padx=40, pady=40)
         card.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(
-            card, text="🔒",
-            font=("Segoe UI", 64),
-        ).grid(row=0, column=0, pady=(48, 8))
+        logo = ctk.CTkFrame(
+            card,
+            fg_color=theme.get("accent_light"),
+            corner_radius=18,
+            width=72,
+            height=72,
+        )
+        logo.grid(row=0, column=0, pady=(36, 18))
+        logo.grid_propagate(False)
+        Icon(
+            logo,
+            "lock",
+            size=30,
+            color="accent",
+            background="accent_light",
+        ).place(relx=0.5, rely=0.5, anchor="center")
 
         ctk.CTkLabel(
             card,
             text="Application verrouillée",
-            font=FONTS["heading_sm"],
+            font=FONTS["heading"],
             text_color=theme.get("text_primary"),
         ).grid(row=1, column=0, pady=(0, 8))
 
         ctk.CTkLabel(
             card,
-            text="La session a expiré par inactivité.",
+            text="Ta session a expiré après une période d’inactivité.",
             font=FONTS["body"],
             text_color=theme.get("text_secondary"),
-        ).grid(row=2, column=0, pady=(0, 32))
+            width=300,
+            wraplength=280,
+            justify="center",
+        ).grid(row=2, column=0, pady=(0, 26))
 
         ctk.CTkButton(
             card,
-            text="🔓  Se reconnecter",
+            text="Déverrouiller mon coffre",
             font=FONTS["body_bold"],
-            fg_color=theme.get("accent"),
-            hover_color=theme.get("accent_hover"),
-            text_color=theme.get("text_on_accent"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["button_height"],
-            width=220,
+            width=270,
+            **button_style("primary", height=46),
             command=self._go_login,
-        ).grid(row=3, column=0, pady=(0, 48))
+        ).grid(row=3, column=0, pady=(0, 14))
+
+        ctk.CTkLabel(
+            card,
+            text="Tes données restent chiffrées pendant le verrouillage.",
+            font=FONTS["caption"],
+            text_color=theme.get("text_muted"),
+        ).grid(row=4, column=0, pady=(0, 38))
 
     def _go_login(self):
         if self.on_unlock:

@@ -15,7 +15,9 @@ sont perdues (c'est pour ça qu'on fera un export plus tard en V2).
 
 import os
 import sqlite3
+import binascii
 from typing import List, Optional, Tuple
+from cryptography.exceptions import InvalidTag
 from src.models import Account, Category
 from src.crypto import encrypt, decrypt
 
@@ -81,9 +83,20 @@ def init_database():
             category_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            totp_secret_encrypted TEXT NOT NULL DEFAULT '',
             FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
         )
     """)
+
+    account_columns = {row["name"] for row in cursor.execute("PRAGMA table_info(accounts)")}
+    if "favorite" not in account_columns:
+        cursor.execute(
+            "ALTER TABLE accounts ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0"
+        )
+    if "totp_secret_encrypted" not in account_columns:
+        cursor.execute(
+            "ALTER TABLE accounts ADD COLUMN totp_secret_encrypted TEXT NOT NULL DEFAULT ''"
+        )
     
     conn.commit()
     conn.close()
@@ -261,7 +274,16 @@ def get_all_accounts(encryption_key: bytes, category_id: Optional[int] = None,
         except Exception:
             decrypted_password = "⚠️ Erreur de déchiffrement"
             decrypted_notes = ""
-        
+
+        totp_secret_error = False
+        try:
+            decrypted_totp_secret = decrypt(
+                row['totp_secret_encrypted'], encryption_key
+            )
+        except (InvalidTag, binascii.Error, ValueError, UnicodeDecodeError):
+            decrypted_totp_secret = ""
+            totp_secret_error = True
+
         accounts.append(Account(
             id=row['id'],
             name=row['name'],
@@ -275,23 +297,34 @@ def get_all_accounts(encryption_key: bytes, category_id: Optional[int] = None,
             category_icon=row['cat_icon'] or "🔑",
             created_at=row['created_at'] or "",
             updated_at=row['updated_at'] or "",
+            favorite=bool(row["favorite"]),
+            totp_secret=decrypted_totp_secret,
+            totp_secret_error=totp_secret_error,
         ))
     return accounts
 
 
 def add_account(name: str, login: str, password: str, url: str, notes: str,
-                category_id: Optional[int], encryption_key: bytes) -> int:
+                category_id: Optional[int], encryption_key: bytes,
+                totp_secret: str = "") -> int:
     """Ajoute un compte avec mot de passe chiffré."""
     conn = get_connection()
     cursor = conn.cursor()
     
     encrypted_password = encrypt(password, encryption_key)
     encrypted_notes = encrypt(notes, encryption_key)
+    encrypted_totp_secret = encrypt(totp_secret, encryption_key)
     
     cursor.execute("""
-        INSERT INTO accounts (name, login, password_encrypted, url, notes_encrypted, category_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (name, login, encrypted_password, url, encrypted_notes, category_id))
+        INSERT INTO accounts (
+            name, login, password_encrypted, url, notes_encrypted,
+            category_id, totp_secret_encrypted
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        name, login, encrypted_password, url, encrypted_notes, category_id,
+        encrypted_totp_secret,
+    ))
     
     account_id = cursor.lastrowid
     conn.commit()
@@ -301,20 +334,28 @@ def add_account(name: str, login: str, password: str, url: str, notes: str,
 
 def update_account(account_id: int, name: str, login: str, password: str, 
                    url: str, notes: str, category_id: Optional[int], 
-                   encryption_key: bytes):
+                   encryption_key: bytes, totp_secret: Optional[str] = None):
     """Met à jour un compte existant."""
     conn = get_connection()
     cursor = conn.cursor()
     
     encrypted_password = encrypt(password, encryption_key)
     encrypted_notes = encrypt(notes, encryption_key)
+    encrypted_totp_secret = (
+        encrypt(totp_secret, encryption_key) if totp_secret is not None else None
+    )
     
     cursor.execute("""
         UPDATE accounts 
         SET name = ?, login = ?, password_encrypted = ?, url = ?, 
-            notes_encrypted = ?, category_id = ?, updated_at = CURRENT_TIMESTAMP
+            notes_encrypted = ?, category_id = ?,
+            totp_secret_encrypted = COALESCE(?, totp_secret_encrypted),
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-    """, (name, login, encrypted_password, url, encrypted_notes, category_id, account_id))
+    """, (
+        name, login, encrypted_password, url, encrypted_notes, category_id,
+        encrypted_totp_secret, account_id,
+    ))
     
     conn.commit()
     conn.close()
@@ -325,6 +366,18 @@ def delete_account(account_id: int):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+    conn.commit()
+    conn.close()
+
+
+def set_account_favorite(account_id: int, favorite: bool):
+    """Enregistre l'état favori d'un compte."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE accounts SET favorite = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (int(favorite), account_id),
+    )
     conn.commit()
     conn.close()
 
@@ -408,18 +461,24 @@ def change_master_password(new_password: str, new_salt: bytes, new_hash: str,
 
     try:
         # Re-chiffrer les comptes et l'historique dans la même transaction.
-        cursor.execute("SELECT id, password_encrypted, notes_encrypted FROM accounts")
+        cursor.execute(
+            "SELECT id, password_encrypted, notes_encrypted, totp_secret_encrypted "
+            "FROM accounts"
+        )
         rows = cursor.fetchall()
 
         for row in rows:
             pwd_plain = decrypt(row["password_encrypted"], old_key)
             notes_plain = decrypt(row["notes_encrypted"], old_key)
+            totp_secret = decrypt(row["totp_secret_encrypted"], old_key)
             new_pwd_enc = encrypt(pwd_plain, new_key)
             new_notes_enc = encrypt(notes_plain, new_key)
+            new_totp_secret_enc = encrypt(totp_secret, new_key)
 
             cursor.execute(
-                "UPDATE accounts SET password_encrypted = ?, notes_encrypted = ? WHERE id = ?",
-                (new_pwd_enc, new_notes_enc, row["id"]),
+                "UPDATE accounts SET password_encrypted = ?, notes_encrypted = ?, "
+                "totp_secret_encrypted = ? WHERE id = ?",
+                (new_pwd_enc, new_notes_enc, new_totp_secret_enc, row["id"]),
             )
 
         cursor.execute(

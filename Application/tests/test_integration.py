@@ -149,6 +149,64 @@ class TestAccounts:
         results = get_all_accounts(db_with_data)
         assert len(results) == get_total_account_count()
 
+    def test_favori_persiste_et_se_lit(self, tmp_db, encryption_key):
+        from src.database import add_account, get_all_accounts, set_account_favorite
+
+        account_id = add_account("Favori", "login", "secret", "", "", None, encryption_key)
+        set_account_favorite(account_id, True)
+
+        account = get_all_accounts(encryption_key)[0]
+        assert account.id == account_id
+        assert account.favorite is True
+
+    def test_secret_totp_est_chiffre_et_dechiffre(self, tmp_db, encryption_key):
+        import sqlite3
+        from src.database import add_account, get_all_accounts, update_account
+
+        secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        account_id = add_account(
+            "TOTP", "login", "password", "", "", None, encryption_key,
+            totp_secret=secret,
+        )
+        with sqlite3.connect(tmp_db) as conn:
+            encrypted = conn.execute(
+                "SELECT totp_secret_encrypted FROM accounts WHERE id = ?",
+                (account_id,),
+            ).fetchone()[0]
+
+        account = get_all_accounts(encryption_key)[0]
+        assert encrypted != secret
+        assert account.totp_secret == secret
+
+        update_account(
+            account_id, "TOTP modifié", "login", "password", "", "", None,
+            encryption_key,
+        )
+        account = get_all_accounts(encryption_key)[0]
+        assert account.totp_secret == secret
+
+    def test_secret_totp_corrompu_est_signale_sans_cacher_le_compte(
+        self, tmp_db, encryption_key
+    ):
+        from src.database import add_account, get_all_accounts, get_connection
+
+        account_id = add_account(
+            "TOTP corrompu", "login", "password", "", "", None, encryption_key,
+            totp_secret="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+        )
+        conn = get_connection()
+        conn.execute(
+            "UPDATE accounts SET totp_secret_encrypted = ? WHERE id = ?",
+            ("invalid", account_id),
+        )
+        conn.commit()
+        conn.close()
+
+        account = get_all_accounts(encryption_key)[0]
+        assert account.password == "password"
+        assert account.totp_secret == ""
+        assert account.totp_secret_error is True
+
     def test_compte_total(self, tmp_db, encryption_key):
         from src.database import add_account, get_total_account_count
         before = get_total_account_count()
@@ -285,6 +343,22 @@ class TestSettings:
         set_setting("theme", "light")
         assert get_setting("theme") == "light"
 
+    def test_delai_presse_papiers_configurable(self, tmp_db):
+        from src.clipboard import get_clipboard_clear_seconds
+        from src.database import set_setting
+
+        assert get_clipboard_clear_seconds() == 30
+        set_setting("clipboard_clear_seconds", "15")
+        assert get_clipboard_clear_seconds() == 15
+
+    def test_delai_presse_papiers_invalide_signale(self, tmp_db):
+        from src.clipboard import get_clipboard_clear_seconds
+        from src.database import set_setting
+
+        set_setting("clipboard_clear_seconds", "0")
+        with pytest.raises(ValueError):
+            get_clipboard_clear_seconds()
+
 
 # ══════════════════════════════════════════════════════════════
 # EXPORT / IMPORT VAULT
@@ -336,6 +410,37 @@ class TestVaultIO:
         accounts_after = {a.name for a in get_all_accounts(db_with_data)}
         assert get_total_account_count() == count_before
         assert accounts_before == accounts_after
+
+    def test_export_import_conserve_les_favoris(self, tmp_db, db_with_data, tmp_path):
+        from src.database import get_all_accounts, set_account_favorite
+        from src.vault_io import export_vault, import_vault
+
+        account = get_all_accounts(db_with_data)[0]
+        set_account_favorite(account.id, True)
+        path = str(tmp_path / "favorites.vault")
+        export_vault(path, db_with_data)
+
+        import_vault(path, db_with_data)
+
+        restored = next(a for a in get_all_accounts(db_with_data) if a.name == account.name)
+        assert restored.favorite is True
+
+    def test_export_import_conserve_le_secret_totp(
+        self, tmp_db, encryption_key, tmp_path
+    ):
+        from src.database import add_account, get_all_accounts
+        from src.vault_io import export_vault, import_vault
+
+        secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        add_account(
+            "TOTP", "login", "password", "", "", None, encryption_key,
+            totp_secret=secret,
+        )
+        path = str(tmp_path / "totp.vault")
+        export_vault(path, encryption_key)
+        import_vault(path, encryption_key)
+
+        assert get_all_accounts(encryption_key)[0].totp_secret == secret
 
     def test_import_mauvaise_cle_leve_valueerror(self, tmp_db, db_with_data, tmp_path, encryption_key):
         """Importer avec une mauvaise clé lève une ValueError."""
@@ -407,6 +512,7 @@ class TestMasterPasswordChange:
         account_id = add_account(
             "Compte de test", "demo@example.invalid", "AncienSecret!",
             "", "Note privée", None, encryption_key,
+            totp_secret="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
         )
         push_password_history(account_id, "AncienSecret!", encryption_key)
 
@@ -421,6 +527,7 @@ class TestMasterPasswordChange:
         account = get_all_accounts(new_key)[0]
         assert account.password == "AncienSecret!"
         assert account.notes == "Note privée"
+        assert account.totp_secret == "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
         assert get_password_history(account_id, new_key)[0]["password"] == "AncienSecret!"
         assert get_master_config() == (
             base64.b64encode(new_salt).decode("utf-8"),

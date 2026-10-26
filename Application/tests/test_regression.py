@@ -62,6 +62,40 @@ class TestRegressionDatabase:
         assert "categories" in tables
         assert "accounts" in tables
 
+    def test_init_database_migre_un_ancien_coffre(self, tmp_path, monkeypatch):
+        import sqlite3
+        import src.database as db
+
+        db_path = str(tmp_path / "legacy_vault.db")
+        monkeypatch.setattr(db, "get_db_path", lambda: db_path)
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("""
+                CREATE TABLE accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    login TEXT NOT NULL DEFAULT '',
+                    password_encrypted TEXT NOT NULL DEFAULT '',
+                    url TEXT NOT NULL DEFAULT '',
+                    notes_encrypted TEXT NOT NULL DEFAULT '',
+                    category_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute(
+                "INSERT INTO accounts (name) VALUES (?)",
+                ("Compte existant",),
+            )
+
+        db.init_database()
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT favorite, totp_secret_encrypted FROM accounts WHERE name = ?",
+                ("Compte existant",),
+            ).fetchone()
+
+        assert row == (0, "")
+
     def test_is_first_launch_vrai_sur_nouvelle_db(self, tmp_db):
         from src.database import is_first_launch
         assert is_first_launch() is True
@@ -125,6 +159,50 @@ class TestRegressionUI:
         assert "heading" in FONTS
         assert "window_width" in DIMENSIONS
 
+    def test_changement_theme_ne_recharge_pas_les_donnees(self, monkeypatch):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from src.ui.main_screen import MainScreen
+        from src.ui.theme import theme
+
+        screen = SimpleNamespace(
+            configure=Mock(),
+            sidebar=Mock(),
+            main_content=Mock(),
+            title_label=Mock(),
+            subtitle_label=Mock(),
+            _theme_btn=Mock(),
+            search_bar=Mock(),
+            dashboard_view=Mock(),
+            _refresh_all=Mock(),
+        )
+        monkeypatch.setattr(theme, "is_dark", lambda: True)
+
+        MainScreen.apply_theme(screen)
+
+        screen._refresh_all.assert_not_called()
+        screen.search_bar.apply_theme.assert_called_once()
+
+    def test_ecran_principal_charge_les_donnees_a_la_creation(self, monkeypatch):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        import customtkinter as ctk
+        from src.ui.main_screen import MainScreen
+
+        monkeypatch.setattr(ctk.CTkFrame, "__init__", lambda self, *args, **kwargs: None)
+        monkeypatch.setattr(MainScreen, "_build", lambda self: None)
+        monkeypatch.setattr(MainScreen, "_reset_lock_timer", lambda self: None)
+        refresh = Mock()
+        monkeypatch.setattr(MainScreen, "_refresh_all", refresh)
+        parent = SimpleNamespace(debug_console=None)
+        top_level = SimpleNamespace(bind=Mock())
+        monkeypatch.setattr(MainScreen, "winfo_toplevel", lambda self: top_level)
+        screen = MainScreen.__new__(MainScreen)
+
+        MainScreen.__init__(screen, parent, encryption_key=b"test-key")
+
+        refresh.assert_called_once()
+
     def test_import_models(self):
         from src.models import Account, Category, CATEGORY_ICONS, CATEGORY_COLORS
         a = Account(name="Test")
@@ -133,6 +211,13 @@ class TestRegressionUI:
         assert c.name == "Cat"
         assert len(CATEGORY_ICONS) > 0
         assert len(CATEGORY_COLORS) > 0
+
+    def test_icones_de_categories_compatibles_avec_le_rendu_vectoriel(self):
+        from src.models import CATEGORY_ICONS
+        from src.ui.icons import ICON_NAMES, LEGACY_ICON_NAMES, normalize_icon
+
+        assert set(CATEGORY_ICONS) <= LEGACY_ICON_NAMES.keys()
+        assert {normalize_icon(icon) for icon in CATEGORY_ICONS} <= ICON_NAMES
 
     def test_import_clipboard(self):
         try:

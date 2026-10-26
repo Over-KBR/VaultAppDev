@@ -6,6 +6,7 @@ from src.strength import analyze_password, is_weak
 from src.history import get_all_last_changed_dates
 from src import database as db
 from src.models import Account
+from src.ui.icons import Icon, normalize_icon
 
 
 def parse_sqlite_timestamp(dt_str: str) -> datetime:
@@ -38,17 +39,16 @@ class DashboardScreen(ctk.CTkScrollableFrame):
         )
         self.encryption_key = encryption_key
         self.on_edit_account = on_edit_account
-        
-        self.refresh_data()
 
-    def refresh_data(self):
+    def refresh_data(self, accounts=None):
         """Calcule les statistiques et reconstruit toute la vue."""
         # Vider les widgets existants
         for widget in self.winfo_children():
             widget.destroy()
 
         # 1. Récupération et analyse des données
-        accounts = db.get_all_accounts(self.encryption_key)
+        if accounts is None:
+            accounts = db.get_all_accounts(self.encryption_key)
         last_changed_dates = get_all_last_changed_dates()
 
         weak_accounts: List[Tuple[Account, dict]] = []
@@ -116,22 +116,22 @@ class DashboardScreen(ctk.CTkScrollableFrame):
         # Couleur du score
         if score >= 80:
             score_color = theme.get("success")
-            status_text = "Votre coffre-fort est en bonne santé ! 🎉"
+            status_text = "Votre coffre-fort est en bonne santé."
         elif score >= 40:
             score_color = theme.get("warning")
-            status_text = "Quelques vulnérabilités détectées ⚠️"
+            status_text = "Quelques points méritent votre attention."
         else:
             score_color = theme.get("error")
-            status_text = "Action requise : coffre vulnérable 🚨"
+            status_text = "Des actions sont nécessaires pour renforcer le coffre."
 
         card = ctk.CTkFrame(
             self,
             fg_color=theme.get("bg_secondary"),
-            corner_radius=DIMENSIONS["corner_radius"],
+            corner_radius=DIMENSIONS["corner_radius_lg"],
             border_width=1,
             border_color=theme.get("border"),
         )
-        card.pack(fill="x", padx=16, pady=(16, 24))
+        card.pack(fill="x", padx=22, pady=(20, 24))
 
         # Deux colonnes
         card.grid_columnconfigure(0, weight=1)
@@ -139,7 +139,7 @@ class DashboardScreen(ctk.CTkScrollableFrame):
 
         # Colonne Gauche : Score textuel
         score_left_frame = ctk.CTkFrame(card, fg_color="transparent")
-        score_left_frame.grid(row=0, column=0, padx=24, pady=24, sticky="nsew")
+        score_left_frame.grid(row=0, column=0, padx=26, pady=24, sticky="nsew")
 
         ctk.CTkLabel(
             score_left_frame,
@@ -148,12 +148,19 @@ class DashboardScreen(ctk.CTkScrollableFrame):
             text_color=theme.get("text_secondary"),
         ).pack(anchor="w")
 
+        Icon(
+            score_left_frame,
+            "shield_check" if score >= 80 else "warning",
+            size=28,
+            color=score_color,
+            background="bg_secondary",
+        ).pack(anchor="w", pady=(10, 4))
         ctk.CTkLabel(
             score_left_frame,
             text=f"{score}%",
-            font=("Segoe UI", 48, "bold"),
-            text_color=score_color,
-        ).pack(anchor="w", pady=(4, 4))
+            font=("Segoe UI Variable Display", 46, "bold"),
+            text_color=theme.get("text_primary"),
+        ).pack(anchor="w", pady=(0, 4))
 
         ctk.CTkLabel(
             score_left_frame,
@@ -166,13 +173,13 @@ class DashboardScreen(ctk.CTkScrollableFrame):
 
         # Colonne Droite : Barre de progression et Badges stats
         score_right_frame = ctk.CTkFrame(card, fg_color="transparent")
-        score_right_frame.grid(row=0, column=1, padx=24, pady=24, sticky="nsew")
+        score_right_frame.grid(row=0, column=1, padx=26, pady=24, sticky="nsew")
 
         # Barre de progression
         progress = ctk.CTkProgressBar(
             score_right_frame,
-            height=14,
-            corner_radius=7,
+            height=10,
+            corner_radius=5,
             progress_color=score_color,
             fg_color=theme.get("bg_tertiary"),
         )
@@ -183,9 +190,9 @@ class DashboardScreen(ctk.CTkScrollableFrame):
         badges_frame = ctk.CTkFrame(score_right_frame, fg_color="transparent")
         badges_frame.pack(fill="x", anchor="w")
 
-        self._add_badge(badges_frame, "🔴", f"{weak} faible" + ("s" if weak > 1 else ""))
-        self._add_badge(badges_frame, "🟠", f"{reused} réutilisé" + ("s" if reused > 1 else ""))
-        self._add_badge(badges_frame, "🟡", f"{obsolete} obsolète" + ("s" if obsolete > 1 else ""))
+        self._add_badge(badges_frame, "warning", f"{weak} faible" + ("s" if weak > 1 else ""))
+        self._add_badge(badges_frame, "copy", f"{reused} réutilisé" + ("s" if reused > 1 else ""))
+        self._add_badge(badges_frame, "info", f"{obsolete} obsolète" + ("s" if obsolete > 1 else ""))
 
     def _add_badge(self, parent, icon: str, label: str):
         badge = ctk.CTkFrame(
@@ -196,17 +203,24 @@ class DashboardScreen(ctk.CTkScrollableFrame):
         )
         badge.pack(side="left", padx=(0, 10))
         
+        Icon(
+            badge,
+            icon,
+            size=14,
+            color="text_secondary",
+            background="bg_tertiary",
+        ).pack(side="left", padx=(8, 4), pady=2)
         lbl = ctk.CTkLabel(
             badge,
-            text=f"{icon}  {label}",
+            text=label,
             font=FONTS["caption"],
             text_color=theme.get("text_primary"),
         )
-        lbl.pack(padx=8, pady=2)
+        lbl.pack(side="left", padx=(0, 8), pady=2)
 
     def _build_weak_section(self, weak_accounts: List[Tuple[Account, dict]]):
         """Construit la liste des mots de passe faibles."""
-        section = self._create_section_frame("❌ Mots de passe faibles", f"Ces {len(weak_accounts)} mots de passe sont trop simples et faciles à deviner.")
+        section = self._create_section_frame("Mots de passe faibles", f"{len(weak_accounts)} mots de passe sont trop simples et faciles à deviner.")
         
         for acc, analysis in weak_accounts:
             self._build_vulnerability_row(
@@ -221,7 +235,7 @@ class DashboardScreen(ctk.CTkScrollableFrame):
     def _build_reused_section(self, duplicate_groups: Dict[str, List[Account]]):
         """Construit la liste des mots de passe réutilisés."""
         total_accounts = sum(len(accs) for accs in duplicate_groups.values())
-        section = self._create_section_frame("⚠️ Mots de passe réutilisés", f"Vous réutilisez les mêmes mots de passe sur {total_accounts} comptes différents.")
+        section = self._create_section_frame("Mots de passe réutilisés", f"Les mêmes mots de passe sont utilisés sur {total_accounts} comptes.")
 
         for pwd, accs in duplicate_groups.items():
             group_frame = ctk.CTkFrame(
@@ -235,7 +249,7 @@ class DashboardScreen(ctk.CTkScrollableFrame):
 
             header = ctk.CTkLabel(
                 group_frame,
-                text=f"🔑 Mot de passe utilisé {len(accs)} fois :",
+                text=f"Mot de passe répété {len(accs)} fois",
                 font=FONTS["body_sm_bold"],
                 text_color=theme.get("warning"),
                 anchor="w",
@@ -248,14 +262,14 @@ class DashboardScreen(ctk.CTkScrollableFrame):
                     account=acc,
                     badge_text="Doublon",
                     badge_color=theme.get("warning"),
-                    desc=f"Identifiant : {acc.login if acc.login else 'Pas de login'}",
+                            desc=f"Identifiant : {acc.login if acc.login else 'Aucun identifiant'}",
                     padx=12,
                     pady=4
                 )
 
     def _build_obsolete_section(self, obsolete_accounts: List[Tuple[Account, int]]):
         """Construit la liste des mots de passe obsolètes."""
-        section = self._create_section_frame("📅 Mots de passe obsolètes", f"Ces {len(obsolete_accounts)} mots de passe n'ont pas été changés depuis plus de 6 mois.")
+        section = self._create_section_frame("Mots de passe anciens", f"{len(obsolete_accounts)} mots de passe n'ont pas été modifiés depuis plus de six mois.")
 
         for acc, age_days in obsolete_accounts:
             months = age_days // 30
@@ -264,13 +278,13 @@ class DashboardScreen(ctk.CTkScrollableFrame):
                 account=acc,
                 badge_text=f"{months} mois",
                 badge_color=theme.get("info"),
-                desc=f"Dernier changement il y a {age_days} jours (requis pour la sécurité de vos données)."
+                desc=f"Dernier changement il y a {age_days} jours."
             )
 
     def _create_section_frame(self, title: str, subtitle: str) -> ctk.CTkFrame:
         """Crée une section stylisée avec titre et sous-titre."""
         section = ctk.CTkFrame(self, fg_color="transparent")
-        section.pack(fill="x", padx=16, pady=12)
+        section.pack(fill="x", padx=22, pady=14)
 
         ctk.CTkLabel(
             section,
@@ -296,23 +310,39 @@ class DashboardScreen(ctk.CTkScrollableFrame):
             parent,
             fg_color=theme.get("bg_secondary") if parent.cget("fg_color") == "transparent" else theme.get("bg_tertiary"),
             corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=64,
+            border_width=1,
+            border_color=theme.get("border"),
+            height=88,
         )
         row.pack(fill="x", pady=pady, padx=padx)
         row.pack_propagate(False)
 
-        # Colonne 1 : Emoji Catégorie
-        icon_lbl = ctk.CTkLabel(
+        category_icon = Icon(
             row,
-            text=account.category_icon,
-            font=FONTS["icon"],
-            width=36,
+            normalize_icon(account.category_icon),
+            size=18,
+            color=account.category_color,
+            background="bg_secondary",
         )
-        icon_lbl.pack(side="left", padx=10)
+        category_icon.pack(side="left", padx=12)
+
+        edit_btn = ctk.CTkButton(
+            row,
+            text="Modifier",
+            font=FONTS["body_sm_bold"],
+            fg_color="transparent",
+            hover_color=theme.get("bg_hover"),
+            text_color=theme.get("text_secondary"),
+            width=90,
+            height=32,
+            corner_radius=DIMENSIONS["corner_radius_sm"],
+            command=lambda: self._trigger_edit(account)
+        )
+        edit_btn.pack(side="right", padx=12, pady=16)
 
         # Colonne 2 : Info compte (Nom + description)
         info_frame = ctk.CTkFrame(row, fg_color="transparent")
-        info_frame.pack(side="left", fill="both", expand=True, pady=8)
+        info_frame.pack(side="left", fill="both", expand=True, pady=10)
 
         title_row = ctk.CTkFrame(info_frame, fg_color="transparent")
         title_row.pack(anchor="w", fill="x")
@@ -340,28 +370,21 @@ class DashboardScreen(ctk.CTkScrollableFrame):
             text_color=badge_color,
         ).pack(padx=6, pady=1)
 
-        ctk.CTkLabel(
+        description = ctk.CTkLabel(
             info_frame,
             text=desc,
             font=FONTS["body_sm"],
             text_color=theme.get("text_secondary"),
             anchor="w",
-        ).pack(anchor="w", fill="x")
-
-        # Bouton Action : Modifier
-        edit_btn = ctk.CTkButton(
-            row,
-            text="✏️ Modifier",
-            font=FONTS["body_sm_bold"],
-            fg_color="transparent",
-            hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_secondary"),
-            width=90,
-            height=32,
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            command=lambda: self._trigger_edit(account)
         )
-        edit_btn.pack(side="right", padx=12, pady=16)
+        description.pack(anchor="w", fill="x")
+        info_frame.bind(
+            "<Configure>",
+            lambda event: description.configure(
+                wraplength=max(120, event.width - 8)
+            ),
+            add="+",
+        )
 
     def _trigger_edit(self, account: Account):
         if self.on_edit_account:
@@ -372,10 +395,12 @@ class DashboardScreen(ctk.CTkScrollableFrame):
         success_frame = ctk.CTkFrame(self, fg_color="transparent")
         success_frame.pack(fill="both", expand=True, pady=60)
 
-        ctk.CTkLabel(
+        Icon(
             success_frame,
-            text="🛡️",
-            font=("Segoe UI Emoji", 72),
+            "shield_check",
+            size=56,
+            color="success",
+            background="bg_primary",
         ).pack(pady=(0, 20))
 
         ctk.CTkLabel(
@@ -398,10 +423,12 @@ class DashboardScreen(ctk.CTkScrollableFrame):
         empty_frame = ctk.CTkFrame(self, fg_color="transparent")
         empty_frame.pack(fill="both", expand=True, pady=60)
 
-        ctk.CTkLabel(
+        Icon(
             empty_frame,
-            text="📋",
-            font=("Segoe UI Emoji", 48),
+            "list",
+            size=38,
+            color="text_muted",
+            background="bg_primary",
         ).pack(pady=(0, 16))
 
         ctk.CTkLabel(

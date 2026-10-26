@@ -52,25 +52,25 @@ The pytest fixtures in `tests/conftest.py` redirect the database path to a fresh
   - `accounts` with encrypted password data.
 - `src.crypto.py` owns the key-derivation and encryption/decryption logic.
 - `src.api.py` starts a small Flask server in a daemon thread. It listens only on loopback and is used by the browser extension to query account data and request autofill.
-- `src.history.py`, `src.generator.py`, `src.strength.py`, `src.clipboard.py`, and `src.vault_io.py` implement password history, generation, strength checks, clipboard handling, and encrypted backup import/export.
+- `src.history.py`, `src.generator.py`, `src.strength.py`, `src.clipboard.py`, `src.totp.py`, and `src.vault_io.py` implement password history, generation, strength checks, clipboard handling, local TOTP, and encrypted backup import/export.
 - `src.ui.app.VaultApp` initializes persistence and the history table, starts the API while locked, and routes between the welcome/login/locked and main screens. The main screen owns account/category navigation, the security dashboard, auto-lock activity timer, and settings dialogs.
 
 ### Startup, unlock, and encrypted data
 
 - On first launch, `LoginScreen` creates a random salt, stores the salt and a master-password verification value in `config`, creates default categories, and derives the vault key. On later launches it checks the verification value before deriving the key.
 - `src.crypto.py` derives a 32-byte key with PBKDF2-HMAC-SHA256 (600,000 iterations), then uses AES-GCM with a fresh 12-byte nonce for each encrypted value.
-- Account passwords and notes are encrypted before being written to SQLite. Account names, logins, URLs, category metadata, and settings are stored as ordinary SQLite values; do not assume every field is encrypted.
+- Account passwords, notes, and TOTP secrets are encrypted before being written to SQLite. Account names, logins, URLs, category metadata, and settings are stored as ordinary SQLite values; do not assume every field is encrypted.
 - SQLite is opened through `src.database.get_connection()`, which enables WAL mode and foreign keys. The database path is `%APPDATA%\VaultApp\vault.db` (falling back to the user's home directory if `APPDATA` is unset).
 - Password history is a separate `password_history` table created by `src.history.init_password_history_table()`. It stores encrypted previous passwords and is limited to three entries per account. Account edits push the previous password into history only when the password changes; deleting an account cascades to its history.
-- `src.vault_io.py` exports a `VAULT2`-header file containing an AES-GCM-encrypted JSON payload. Import replaces accounts and categories; the settings/master-password config are not part of that payload.
-- Changing the master password must keep the stored salt, verification value, derived key, account ciphertext, and password-history ciphertext consistent. Review every encrypted table when changing key-rotation behavior.
+- `src.vault_io.py` exports a `VAULT2`-header file containing an AES-GCM-encrypted JSON payload, including favorite state and TOTP secrets. Import replaces accounts and categories; settings/master-password config are not part of that payload.
+- Changing the master password must keep the stored salt, verification value, derived key, all account ciphertext (including TOTP secrets), and password-history ciphertext consistent. Review every encrypted table when changing key-rotation behavior.
 
 ### Desktop features and shared helpers
 
-- `src.ui.main_screen.MainScreen` is the central UI controller. It refreshes account cards and category buttons from the database, and delegates editing to `AccountDialog` / `CategoryDialog`.
+- `src.ui.main_screen.MainScreen` is the central UI controller. It refreshes account cards and category buttons from the database, provides the Favorites view, and delegates editing to `AccountDialog` / `CategoryDialog`. Theme changes must not trigger a full data refresh.
 - The dashboard (`src.ui.dashboard_screen.DashboardScreen`) evaluates password strength, reused passwords, and age (180 days) and computes an overall score via `src.strength.calculate_vault_score()`.
 - Strength analysis uses `zxcvbn` when installed and a local heuristic otherwise. Password generation uses Python's `secrets` module and guarantees one character from every enabled group.
-- Password copy is scheduled to clear the clipboard after 30 seconds; login copy intentionally does not use that timer. Keep this distinction if changing clipboard behavior.
+- Password and login clipboard clearing is configurable (15/30/60 seconds). TOTP codes are generated locally (RFC 6238, six digits, 30-second period) and cleared at or before their expiry; never expose TOTP secrets through the browser API.
 - Theme colors, fonts, and dimensions are centralized in `src.ui.theme`; screens and shared widgets consume those values through the shared `theme` manager.
 
 ### Browser extension (`Extension/`)

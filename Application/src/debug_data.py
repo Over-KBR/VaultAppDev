@@ -31,17 +31,20 @@ def create_debug_vault() -> bytes:
     work_id = db.add_category("Debug - travail", "#a855f7", "💻")
 
     accounts = [
-        ("Demo faible", "weak@example.invalid", "123456", "https://example.com", "Compte fictif pour tester l'audit.", personal_id),
-        ("Demo partagé A", "shared-a@example.invalid", "Debug-Shared-Only-2026!", "https://alpha.example.invalid", "Mot de passe partagé fictif.", work_id),
-        ("Demo partagé B", "shared-b@example.invalid", "Debug-Shared-Only-2026!", "https://beta.example.invalid", "Deuxième compte fictif avec le même mot de passe.", work_id),
-        ("Demo sans URL", "no-url@example.invalid", "Debug-Unique-Only-2026!", "", "Compte fictif sans URL.", personal_id),
-        ("Demo obsolète", "old@example.invalid", "Debug-Old-Only-2026!", "https://old.example.invalid", "Compte fictif daté pour l'audit.", personal_id),
+        ("Demo faible", "weak@example.invalid", "123456", "https://example.com", "Compte fictif pour tester l'audit.", personal_id, ""),
+        ("Demo partagé A", "shared-a@example.invalid", "Debug-Shared-Only-2026!", "https://alpha.example.invalid", "Mot de passe partagé fictif.", work_id, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"),
+        ("Demo partagé B", "shared-b@example.invalid", "Debug-Shared-Only-2026!", "https://beta.example.invalid", "Deuxième compte fictif avec le même mot de passe.", work_id, ""),
+        ("Demo sans URL", "no-url@example.invalid", "Debug-Unique-Only-2026!", "", "Compte fictif sans URL.", personal_id, ""),
+        ("Demo obsolète", "old@example.invalid", "Debug-Old-Only-2026!", "https://old.example.invalid", "Compte fictif daté pour l'audit.", personal_id, ""),
     ]
 
     account_ids = []
-    for name, login, password, url, notes, category_id in accounts:
+    for name, login, password, url, notes, category_id, totp_secret in accounts:
         account_ids.append(
-            db.add_account(name, login, password, url, notes, category_id, key)
+            db.add_account(
+                name, login, password, url, notes, category_id, key,
+                totp_secret=totp_secret,
+            )
         )
 
     conn = db.get_connection()

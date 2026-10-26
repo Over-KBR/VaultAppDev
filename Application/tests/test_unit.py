@@ -322,3 +322,38 @@ class TestCalculateVaultScore:
         # Total = 18 / 20 -> 90%
         assert calculate_vault_score(accs, {}) == 90
 
+
+class TestTOTP:
+    def test_code_rfc6238_a_59_secondes(self):
+        from src.totp import generate_totp_code
+
+        secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        assert generate_totp_code(secret, timestamp=59) == "287082"
+
+    def test_code_garde_ses_zero_initiaux(self, monkeypatch):
+        import src.totp as totp
+
+        monkeypatch.setattr(totp.time, "time", lambda: 0)
+        assert totp.generate_totp_code(
+            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        ) == "755224"
+
+    def test_normalisation_base32(self):
+        from src.totp import normalize_totp_secret
+
+        assert normalize_totp_secret(" gez dgnb vgy3 tqojq gezd gnbv gy3t qojq ") == (
+            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        )
+
+    @pytest.mark.parametrize("secret", ["", "invalid!", "ABC"])
+    def test_secret_invalide_refuse(self, secret):
+        from src.totp import generate_totp_code
+
+        with pytest.raises(ValueError):
+            generate_totp_code(secret)
+
+    def test_duree_restante_dans_la_periode(self):
+        from src.totp import seconds_until_next_code
+
+        assert seconds_until_next_code(timestamp=59) == 1
+        assert seconds_until_next_code(timestamp=60) == 30

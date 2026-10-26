@@ -9,16 +9,27 @@ Permet de :
 
 import customtkinter as ctk
 from typing import Optional
-from src.ui.theme import theme, FONTS, DIMENSIONS, blend_colors
+from src.ui.after_callbacks import AfterCallbackMixin
+from src.ui.theme import (
+    theme,
+    FONTS,
+    DIMENSIONS,
+    bind_entry_focus,
+    blend_colors,
+    button_style,
+    entry_style,
+)
+from src.ui.icons import Icon, normalize_icon
 from src.models import Category, CATEGORY_ICONS, CATEGORY_COLORS
 
 
-class CategoryDialog(ctk.CTkToplevel):
+class CategoryDialog(AfterCallbackMixin, ctk.CTkToplevel):
     """Dialogue pour créer ou modifier une catégorie."""
     
     def __init__(self, parent, category: Optional[Category] = None, 
                  on_save=None, **kwargs):
         super().__init__(parent, **kwargs)
+        self._init_after_callbacks()
         
         self.category = category
         self.on_save = on_save
@@ -41,13 +52,17 @@ class CategoryDialog(ctk.CTkToplevel):
         self.grab_set()
         
         self._build()
+
+    def destroy(self):
+        self._cancel_after_callbacks()
+        super().destroy()
     
     def _build(self):
         # ── Header ──
         header = ctk.CTkFrame(self, fg_color=theme.get("bg_dialog"))
         header.pack(fill="x", padx=28, pady=(24, 16))
         
-        title_text = "✏️  Modifier la catégorie" if self.category else "📁  Nouvelle catégorie"
+        title_text = "Modifier la catégorie" if self.category else "Nouvelle catégorie"
         ctk.CTkLabel(
             header,
             text=title_text,
@@ -77,10 +92,12 @@ class CategoryDialog(ctk.CTkToplevel):
         preview_inner = ctk.CTkFrame(self.preview_frame, fg_color=theme.get("bg_dialog"))
         preview_inner.place(relx=0.5, rely=0.5, anchor="center")
         
-        self.preview_icon = ctk.CTkLabel(
+        self.preview_icon = Icon(
             preview_inner,
-            text=self.selected_icon,
-            font=FONTS["icon_lg"],
+            normalize_icon(self.selected_icon),
+            size=22,
+            color=self.selected_color,
+            background="bg_dialog",
         )
         self.preview_icon.pack(side="left", padx=(0, 10))
         
@@ -107,14 +124,10 @@ class CategoryDialog(ctk.CTkToplevel):
             name_frame,
             placeholder_text="Ex : Réseaux sociaux",
             font=FONTS["body"],
-            fg_color=theme.get("bg_input"),
-            border_color=theme.get("border"),
-            text_color=theme.get("text_primary"),
-            placeholder_text_color=theme.get("text_muted"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["input_height"],
+            **entry_style(),
         )
         self.name_entry.pack(fill="x")
+        bind_entry_focus(self.name_entry)
         self.name_entry.bind("<KeyRelease>", self._update_preview)
         
         if self.category:
@@ -139,7 +152,7 @@ class CategoryDialog(ctk.CTkToplevel):
             is_selected = color_info["hex"] == self.selected_color
             btn = ctk.CTkButton(
                 colors_grid,
-                text="✓" if is_selected else "",
+                text="",
                 width=38,
                 height=38,
                 corner_radius=19,
@@ -151,8 +164,21 @@ class CategoryDialog(ctk.CTkToplevel):
                 font=FONTS["body_bold"],
                 command=lambda c=color_info["hex"]: self._select_color(c),
             )
+            mark = Icon(
+                btn,
+                "check",
+                size=16,
+                color="text_on_accent",
+                background=color_info["hex"],
+            )
+            mark.bind(
+                "<Button-1>",
+                lambda _event, c=color_info["hex"]: self._select_color(c),
+            )
+            if is_selected:
+                mark.place(relx=0.5, rely=0.5, anchor="center")
             btn.grid(row=i // 7, column=i % 7, padx=4, pady=4)
-            self.color_buttons.append((btn, color_info["hex"]))
+            self.color_buttons.append((btn, color_info["hex"], mark))
         
         # ── Sélecteur d'icône ──
         icon_frame = ctk.CTkFrame(form, fg_color=theme.get("bg_dialog"))
@@ -174,8 +200,7 @@ class CategoryDialog(ctk.CTkToplevel):
             is_selected = icon == self.selected_icon
             btn = ctk.CTkButton(
                 icons_grid,
-                text=icon,
-                font=FONTS["icon_sm"],
+                text="",
                 width=40,
                 height=40,
                 corner_radius=DIMENSIONS["corner_radius_sm"],
@@ -186,8 +211,17 @@ class CategoryDialog(ctk.CTkToplevel):
                 border_color=theme.get("accent") if is_selected else theme.get("bg_tertiary"),
                 command=lambda ic=icon: self._select_icon(ic),
             )
+            icon_widget = Icon(
+                btn,
+                normalize_icon(icon),
+                size=18,
+                color="accent" if is_selected else "text_secondary",
+                background="accent_light" if is_selected else "bg_tertiary",
+            )
+            icon_widget.place(relx=0.5, rely=0.5, anchor="center")
+            icon_widget.bind("<Button-1>", lambda _event, ic=icon: self._select_icon(ic))
             btn.grid(row=i // cols, column=i % cols, padx=2, pady=2)
-            self.icon_buttons.append((btn, icon))
+            self.icon_buttons.append((btn, icon, icon_widget))
         
         # ── Boutons ──
         btn_frame = ctk.CTkFrame(self, fg_color=theme.get("bg_dialog"))
@@ -197,56 +231,55 @@ class CategoryDialog(ctk.CTkToplevel):
             btn_frame,
             text="Annuler",
             font=FONTS["body"],
-            fg_color=theme.get("bg_tertiary"),
-            hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_secondary"),
-            border_width=1,
-            border_color=theme.get("border"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["button_height"],
             width=120,
+            **button_style("secondary", height=DIMENSIONS["button_height"]),
             command=self.destroy,
         ).pack(side="left")
         
         ctk.CTkButton(
             btn_frame,
-            text="💾  Sauvegarder",
+            text="Sauvegarder",
             font=FONTS["body_bold"],
-            fg_color=theme.get("accent"),
-            hover_color=theme.get("accent_hover"),
-            text_color=theme.get("text_on_accent"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["button_height"],
             width=160,
+            **button_style("primary", height=DIMENSIONS["button_height"]),
             command=self._on_save,
         ).pack(side="right")
     
     def _select_color(self, color: str):
         self.selected_color = color
-        for btn, c in self.color_buttons:
+        for btn, c, mark in self.color_buttons:
             is_sel = c == color
             btn.configure(
-                text="✓" if is_sel else "",
                 border_width=3 if is_sel else 0,
                 border_color=theme.get("text_on_accent") if is_sel else c,
             )
+            if is_sel:
+                mark.place(relx=0.5, rely=0.5, anchor="center")
+            else:
+                mark.place_forget()
         self._update_preview()
     
     def _select_icon(self, icon: str):
         self.selected_icon = icon
-        for btn, ic in self.icon_buttons:
+        for btn, ic, icon_widget in self.icon_buttons:
             is_sel = ic == icon
             btn.configure(
                 fg_color=theme.get("accent_light") if is_sel else theme.get("bg_tertiary"),
                 border_width=2 if is_sel else 0,
                 border_color=theme.get("accent") if is_sel else theme.get("bg_tertiary"),
             )
+            icon_widget.name = normalize_icon(ic)
+            icon_widget.color = "accent" if is_sel else "text_secondary"
+            icon_widget.background = "accent_light" if is_sel else "bg_tertiary"
+            icon_widget.refresh()
         self._update_preview()
     
     def _update_preview(self, event=None):
         name = self.name_entry.get().strip() or "Ma catégorie"
         self.preview_name.configure(text=name)
-        self.preview_icon.configure(text=self.selected_icon)
+        self.preview_icon.name = normalize_icon(self.selected_icon)
+        self.preview_icon.color = self.selected_color
+        self.preview_icon.refresh()
         self.preview_frame.configure(
             fg_color=blend_colors(self.selected_color, theme.get("bg_dialog"), 0.12)
         )
@@ -255,7 +288,10 @@ class CategoryDialog(ctk.CTkToplevel):
         name = self.name_entry.get().strip()
         if not name:
             self.name_entry.configure(border_color=theme.get("error"))
-            self.after(2000, lambda: self.name_entry.configure(border_color=theme.get("border")))
+            self._schedule_after(
+                2000,
+                lambda: self.name_entry.configure(border_color=theme.get("border")),
+            )
             return
         
         result = {

@@ -11,6 +11,7 @@ def api_client(tmp_db, encryption_key):
     add_account(
         "Example", "demo@example.invalid", "DummyPassword42!",
         "https://example.invalid/login", "Dummy note", None, encryption_key,
+        totp_secret="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
     )
     add_account(
         "Suffix lookalike", "other@example.invalid", "OtherPassword42!",
@@ -42,6 +43,7 @@ def test_accounts_returns_metadata_without_password(api_client):
     assert account["name"] == "Example"
     assert account["login"] == "demo@example.invalid"
     assert "password" not in account
+    assert "totp_secret" not in account
     assert [item["name"] for item in response.json["accounts"]] == ["Example"]
 
 
@@ -56,6 +58,7 @@ def test_fill_requires_unlock_and_returns_selected_credentials(api_client):
         "login": "demo@example.invalid",
         "password": "DummyPassword42!",
     }
+    assert "totp_secret" not in response.json
 
 
 @pytest.mark.parametrize("payload", [{}, {"account_id": "1"}, {"account_id": True}])

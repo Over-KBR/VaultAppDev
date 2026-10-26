@@ -36,7 +36,9 @@ def export_vault(path: str, encryption_key: bytes):
                 "password": a.password,
                 "url": a.url,
                 "notes": a.notes,
+                "totp_secret": a.totp_secret,
                 "category_name": a.category_name,
+                "favorite": a.favorite,
                 "created_at": a.created_at,
                 "updated_at": a.updated_at,
             }
@@ -126,8 +128,9 @@ def _restore_data(payload: dict, encryption_key: bytes):
             cursor.execute("""
                 INSERT INTO accounts (name, login, password_encrypted, url,
                                       notes_encrypted, category_id,
-                                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                      created_at, updated_at, favorite,
+                                      totp_secret_encrypted)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 acc["name"],
                 acc.get("login", ""),
@@ -137,6 +140,8 @@ def _restore_data(payload: dict, encryption_key: bytes):
                 cat_id,
                 acc.get("created_at", ""),
                 acc.get("updated_at", ""),
+                int(bool(acc.get("favorite", False))),
+                _enc(acc.get("totp_secret", ""), encryption_key),
             ))
 
         conn.commit()

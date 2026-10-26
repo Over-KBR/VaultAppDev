@@ -27,6 +27,9 @@ def test_debug_vault_uses_isolated_seeded_database(tmp_db):
     }
     assert len(get_all_categories()) == 2
     assert get_setting("auto_lock_minutes") == "0"
+    assert next(
+        account for account in accounts if account.name == "Demo partagé A"
+    ).totp_secret
 
     salt_b64, stored_hash = get_master_config()
     salt = base64.b64decode(salt_b64)

@@ -7,14 +7,17 @@ C'est l'écran qu'on voit après le déverrouillage :
 """
 
 import customtkinter as ctk
+import time
 from tkinter import messagebox
 from typing import Optional
-from src.ui.theme import theme, FONTS, DIMENSIONS
+from src.ui.theme import theme, FONTS, DIMENSIONS, MOTION, button_style
 from src.ui.components import SearchBar, AccountCard, CategoryButton, ToastNotification
+from src.ui.icons import Icon, IconButton, refresh_icons
 from src.ui.account_dialog import AccountDialog
 from src.ui.category_dialog import CategoryDialog
 from src.models import Account, Category
-from src.clipboard import copy_to_clipboard
+from src.clipboard import copy_to_clipboard, get_clipboard_clear_seconds
+from src.totp import generate_totp_code, seconds_until_next_code
 from src.strength import is_weak
 from src import database as db
 from src.ui.dashboard_screen import DashboardScreen
@@ -35,27 +38,60 @@ class MainScreen(ctk.CTkFrame):
         self.selected_category_id = None  # None = toutes les catégories
         self.search_query = ""
         self.is_dashboard_active = False
+        self.is_favorites_active = False
+        self._search_after_id = None
+        self._view_animation_id = None
+        self._categories_cache = []
+        self._account_count = 0
+        self._favorite_count = 0
 
         # V2 : verrouillage automatique + scan mots de passe faibles
         self._lock_timer_id = None
         self._weak_account_ids: set = set()
 
         if self.debug_mode:
-            ctk.CTkLabel(
+            debug_banner = ctk.CTkFrame(
                 self,
-                text="MODE DEBUG — coffre fictif temporaire — presse-papiers et API désactivés",
-                fg_color="#7c2d12",
-                text_color="#ffffff",
-                font=FONTS["body_sm_bold"],
-            ).pack(side="top", fill="x", pady=6)
+                fg_color=theme.get("accent_light"),
+                corner_radius=0,
+                height=30,
+            )
+            debug_banner.pack(side="top", fill="x")
+            debug_banner.pack_propagate(False)
+            Icon(
+                debug_banner,
+                "info",
+                size=14,
+                color="accent",
+                background="accent_light",
+            ).pack(side="left", padx=(14, 8))
+            ctk.CTkLabel(
+                debug_banner,
+                text="MODE DEBUG | coffre fictif temporaire | presse-papiers et API désactivés",
+                fg_color="transparent",
+                text_color=theme.get("accent"),
+                font=FONTS["caption"],
+            ).pack(side="left")
         self._build()
-        self._scan_weak_passwords()
         self._refresh_all()
         self._reset_lock_timer()
 
         # Réinitialise le timer à chaque activité
-        self.winfo_toplevel().bind("<Motion>", self._on_activity, add="+")
-        self.winfo_toplevel().bind("<KeyPress>", self._on_activity, add="+")
+        self._activity_top_level = self.winfo_toplevel()
+        self._activity_binding_ids = (
+            (
+                "<Motion>",
+                self._activity_top_level.bind(
+                    "<Motion>", self._on_activity, add="+"
+                ),
+            ),
+            (
+                "<KeyPress>",
+                self._activity_top_level.bind(
+                    "<KeyPress>", self._on_activity, add="+"
+                ),
+            ),
+        )
     
     def _build(self):
         # ══════════════════════════════════════════
@@ -86,65 +122,138 @@ class MainScreen(ctk.CTkFrame):
         self.main_content.pack(side="left", fill="both", expand=True)
         
         self._build_main_content()
+
+    def destroy(self):
+        """Annule les rappels différés et les événements globaux avant destruction."""
+        self._cancel_pending_search()
+        self._cancel_view_animation()
+        if self._lock_timer_id is not None:
+            self.after_cancel(self._lock_timer_id)
+            self._lock_timer_id = None
+        if self._activity_top_level.winfo_exists():
+            for sequence, binding_id in self._activity_binding_ids:
+                if binding_id:
+                    self._activity_top_level.unbind(sequence, binding_id)
+        super().destroy()
+
+    def _cancel_pending_search(self):
+        if self._search_after_id is not None:
+            self.after_cancel(self._search_after_id)
+            self._search_after_id = None
+
+    def _cancel_view_animation(self):
+        if self._view_animation_id is not None:
+            self.after_cancel(self._view_animation_id)
+            self._view_animation_id = None
+
+    def _animate_view_in(self, view, bottom_padding=0):
+        self._cancel_view_animation()
+        if MOTION["reduced"]:
+            view.pack_configure(pady=(0, bottom_padding))
+            return
+
+        steps = 4
+        view.pack_configure(pady=(8, bottom_padding))
+
+        def advance(step):
+            if not view.winfo_exists():
+                self._view_animation_id = None
+                return
+            remaining = round(8 * (1 - (step + 1) / steps))
+            view.pack_configure(pady=(remaining, bottom_padding))
+            if step + 1 < steps:
+                self._view_animation_id = self.after(
+                    max(1, MOTION["fast_ms"] // steps),
+                    lambda: advance(step + 1),
+                )
+            else:
+                self._view_animation_id = None
+
+        advance(0)
     
     def _build_sidebar(self):
         """Construit la sidebar avec les catégories."""
         
-        # ── Header sidebar ──
-        header = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        header.pack(fill="x", padx=16, pady=(20, 12))
-        
+        brand_inner = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        brand_inner.pack(fill="x", padx=18, pady=(20, 20))
+        logo = ctk.CTkFrame(
+            brand_inner,
+            fg_color=theme.get("accent"),
+            corner_radius=10,
+            width=34,
+            height=34,
+        )
+        logo.pack(side="left", padx=(0, 10))
+        logo.pack_propagate(False)
+        Icon(
+            logo,
+            "vault",
+            size=19,
+            color="text_on_accent",
+            background="accent",
+        ).place(relx=0.5, rely=0.5, anchor="center")
+
+        brand_text = ctk.CTkFrame(brand_inner, fg_color="transparent")
+        brand_text.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(
-            header,
-            text="🔐 VaultApp",
+            brand_text,
+            text="VaultApp",
             font=FONTS["heading_sm"],
             text_color=theme.get("text_primary"),
             anchor="w",
-        ).pack(side="left")
+        ).pack(anchor="w")
+
+        controls = ctk.CTkFrame(brand_inner, fg_color="transparent")
+        controls.pack(side="right", padx=(4, 0))
         
         # Bouton Paramètres
-        ctk.CTkButton(
-            header,
-            text="⚙️",
-            font=FONTS["icon_sm"],
-            width=34, height=34,
-            corner_radius=DIMENSIONS["corner_radius_sm"],
+        settings_button = IconButton(
+            controls,
+            "settings",
+            command=self._open_settings,
+            color="text_secondary",
+            background="bg_secondary",
+            width=30,
+            height=30,
+            corner_radius=15,
             fg_color="transparent",
             hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_secondary"),
-            command=self._open_settings,
-        ).pack(side="right", padx=(0, 4))
+        )
+        settings_button.button.accessible_name = "Ouvrir les paramètres"
+        settings_button.pack(side="left", padx=(0, 5))
 
         # Toggle thème
-        theme_btn = ctk.CTkButton(
-            header,
-            text="🌙" if theme.is_dark() else "☀️",
-            font=FONTS["icon_sm"],
-            width=34,
-            height=34,
-            corner_radius=DIMENSIONS["corner_radius_sm"],
+        theme_btn = IconButton(
+            controls,
+            "sun" if theme.is_dark() else "moon",
+            command=self._toggle_theme,
+            color="accent",
+            background="bg_secondary",
+            size=19,
+            width=30,
+            height=30,
+            corner_radius=15,
             fg_color="transparent",
             hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_secondary"),
-            command=self._toggle_theme,
         )
-        theme_btn.pack(side="right")
-        self._theme_btn = theme_btn
-        
-        # ── Séparateur ──
+        theme_btn.button.accessible_name = "Changer le thème"
+        theme_btn.pack(side="left")
+        self._theme_btn = theme_btn.button
+        self._theme_icon = theme_btn.icon
+
         ctk.CTkFrame(
             self.sidebar,
             fg_color=theme.get("border"),
             height=1,
-        ).pack(fill="x", padx=16, pady=(0, 8))
+        ).pack(fill="x", padx=18, pady=(0, 14))
         
         # ── Zone de navigation fixe (Tous les comptes / Audit) ──
         self.nav_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.nav_frame.pack(fill="x", padx=8, pady=(0, 8))
+        self.nav_frame.pack(fill="x", padx=10, pady=(0, 18))
         
         # ── Titre catégories ──
         cat_header = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        cat_header.pack(fill="x", padx=16, pady=(8, 4))
+        cat_header.pack(fill="x", padx=18, pady=(4, 8))
         
         ctk.CTkLabel(
             cat_header,
@@ -155,18 +264,20 @@ class MainScreen(ctk.CTkFrame):
         ).pack(side="left")
         
         # Bouton ajouter catégorie
-        ctk.CTkButton(
+        add_category_button = IconButton(
             cat_header,
-            text="＋",
-            font=("Segoe UI", 16, "bold"),
+            "plus",
+            command=self._add_category,
+            color="text_secondary",
+            background="bg_secondary",
             width=28,
             height=28,
             corner_radius=14,
             fg_color="transparent",
             hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_muted"),
-            command=self._add_category,
-        ).pack(side="right")
+        )
+        add_category_button.button.accessible_name = "Ajouter une catégorie"
+        add_category_button.pack(side="right")
         
         # ── Liste des catégories (scrollable) ──
         self.categories_frame = ctk.CTkScrollableFrame(
@@ -175,11 +286,16 @@ class MainScreen(ctk.CTkFrame):
             scrollbar_button_color=theme.get("scrollbar"),
             scrollbar_button_hover_color=theme.get("scrollbar_hover"),
         )
-        self.categories_frame.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.categories_frame.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         
         # ── Footer sidebar ──
         footer = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        footer.pack(fill="x", padx=16, pady=(0, 16))
+        ctk.CTkFrame(
+            self.sidebar,
+            fg_color=theme.get("border"),
+            height=1,
+        ).pack(fill="x", padx=18, pady=(0, 12))
+        footer.pack(fill="x", padx=18, pady=(0, 18))
         
         self.stats_label = ctk.CTkLabel(
             footer,
@@ -188,38 +304,49 @@ class MainScreen(ctk.CTkFrame):
             text_color=theme.get("text_muted"),
         )
         self.stats_label.pack()
+        ctk.CTkLabel(
+            footer,
+            text="Chiffrement local · AES-256-GCM",
+            font=FONTS["caption"],
+            text_color=theme.get("text_muted"),
+        ).pack(pady=(5, 0))
     
     def _build_main_content(self):
         """Construit la zone de contenu principal."""
         
         # ── Header ──
         header = ctk.CTkFrame(self.main_content, fg_color="transparent")
-        header.pack(fill="x", padx=24, pady=(20, 16))
-        
-        # Titre dynamique
+        header.pack(fill="x", padx=42, pady=(32, 22))
+        title_block = ctk.CTkFrame(header, fg_color="transparent")
+        title_block.pack(side="left", fill="x", expand=True)
+
         self.title_label = ctk.CTkLabel(
-            header,
+            title_block,
             text="Tous les comptes",
             font=FONTS["heading"],
             text_color=theme.get("text_primary"),
             anchor="w",
         )
-        self.title_label.pack(side="left")
+        self.title_label.pack(anchor="w")
+        self.subtitle_label = ctk.CTkLabel(
+            title_block,
+            text="Tous vos accès, protégés au même endroit.",
+            font=FONTS["body"],
+            text_color=theme.get("text_muted"),
+            anchor="w",
+        )
+        self.subtitle_label.pack(anchor="w", pady=(4, 0))
         
         # Bouton ajouter un compte
         self.add_btn = ctk.CTkButton(
             header,
-            text="＋  Ajouter",
+            text="Ajouter un compte",
             font=FONTS["body_bold"],
-            fg_color=theme.get("accent"),
-            hover_color=theme.get("accent_hover"),
-            text_color=theme.get("text_on_accent"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=38,
-            width=130,
+            width=156,
+            **button_style("primary", height=40),
             command=self._add_account,
         )
-        self.add_btn.pack(side="right")
+        self.add_btn.pack(side="right", anchor="center", padx=(16, 0))
         
         # ── Vue des Comptes (Recherche + Liste) ──
         self.accounts_view = ctk.CTkFrame(self.main_content, fg_color="transparent")
@@ -230,7 +357,7 @@ class MainScreen(ctk.CTkFrame):
             self.accounts_view,
             on_search=self._on_search,
         )
-        self.search_bar.pack(fill="x", padx=24, pady=(0, 16))
+        self.search_bar.pack(fill="x", padx=42, pady=(0, 20))
         
         # ── Liste des comptes (scrollable) ──
         self.accounts_frame = ctk.CTkScrollableFrame(
@@ -239,7 +366,7 @@ class MainScreen(ctk.CTkFrame):
             scrollbar_button_color=theme.get("scrollbar"),
             scrollbar_button_hover_color=theme.get("scrollbar_hover"),
         )
-        self.accounts_frame.pack(fill="both", expand=True, padx=24, pady=(0, 16))
+        self.accounts_frame.pack(fill="both", expand=True, padx=42, pady=(0, 28))
         
         # ── Vue Dashboard (Tableau de bord de sécurité) ──
         self.dashboard_view = DashboardScreen(
@@ -257,11 +384,16 @@ class MainScreen(ctk.CTkFrame):
     
     def _refresh_all(self):
         """Rafraîchit la sidebar et le contenu principal actif."""
+        accounts = db.get_all_accounts(self.encryption_key)
+        self._account_count = len(accounts)
+        self._favorite_count = sum(account.favorite for account in accounts)
+        self._categories_cache = db.get_all_categories()
+        self._scan_weak_passwords(accounts)
         self._refresh_categories()
         if self.is_dashboard_active:
-            self.dashboard_view.refresh_data()
+            self.dashboard_view.refresh_data(accounts)
         else:
-            self._refresh_accounts()
+            self._refresh_accounts(accounts)
         self._refresh_stats()
     
     def _refresh_categories(self):
@@ -272,26 +404,40 @@ class MainScreen(ctk.CTkFrame):
         for widget in self.categories_frame.winfo_children():
             widget.destroy()
         
-        categories = db.get_all_categories()
-        total = db.get_total_account_count()
+        categories = self._categories_cache
+        total = self._account_count
         
         # Bouton fixe "Tous les comptes"
         CategoryButton(
             self.nav_frame,
             label="Tous les comptes",
-            icon="📋",
-            color="#7c5cfc",
+            icon="list",
+            color=theme.get("accent"),
             count=total,
-            is_active=(not self.is_dashboard_active and self.selected_category_id is None),
+            is_active=(
+                not self.is_dashboard_active
+                and not self.is_favorites_active
+                and self.selected_category_id is None
+            ),
             on_click=lambda _: self._select_category(None),
+        ).pack(fill="x", pady=1)
+
+        CategoryButton(
+            self.nav_frame,
+            label="Favoris",
+            icon="star",
+            color=theme.get("warning"),
+            count=self._favorite_count,
+            is_active=self.is_favorites_active,
+            on_click=lambda _: self._select_favorites(),
         ).pack(fill="x", pady=1)
 
         # Bouton fixe "Audit de sécurité"
         CategoryButton(
             self.nav_frame,
             label="Audit de sécurité",
-            icon="🛡️",
-            color="#ef4444",
+            icon="shield_check",
+            color=theme.get("error"),
             count=0,
             is_active=self.is_dashboard_active,
             on_click=lambda _: self._select_dashboard(),
@@ -314,20 +460,35 @@ class MainScreen(ctk.CTkFrame):
             # Clic droit pour modifier/supprimer
             cat_btn.bind("<Button-3>", lambda e, c=cat: self._show_category_context(e, c))
     
-    def _refresh_accounts(self):
+    def _refresh_accounts(self, accounts=None):
         """Rafraîchit la liste des comptes."""
         # Vider la liste
         for widget in self.accounts_frame.winfo_children():
-            widget.destroy()
+            if widget is not self.empty_frame:
+                widget.destroy()
         
         # Cacher le message vide
         self.empty_frame.pack_forget()
         
-        accounts = db.get_all_accounts(
-            self.encryption_key,
-            category_id=self.selected_category_id,
-            search_query=self.search_query,
-        )
+        if accounts is None:
+            accounts = db.get_all_accounts(
+                self.encryption_key,
+                category_id=None if self.is_favorites_active else self.selected_category_id,
+                search_query=self.search_query,
+            )
+        else:
+            query = self.search_query.casefold()
+            accounts = [
+                account for account in accounts
+                if (self.selected_category_id is None
+                    or account.category_id == self.selected_category_id)
+                and (not self.is_favorites_active or account.favorite)
+                and (not query or query in account.name.casefold()
+                     or query in account.login.casefold()
+                     or query in account.url.casefold())
+            ]
+        if self.is_favorites_active and accounts is not None:
+            accounts = [account for account in accounts if account.favorite]
         
         if not accounts:
             self._show_empty_state()
@@ -341,33 +502,41 @@ class MainScreen(ctk.CTkFrame):
                 on_copy_login=self._copy_login,
                 on_edit=self._edit_account,
                 on_delete=self._delete_account,
+                on_toggle_favorite=self._toggle_favorite,
+                on_copy_totp=self._copy_totp_code,
                 is_weak=account.id in self._weak_account_ids,
             )
             card.pack(fill="x", pady=4)
     
     def _refresh_stats(self):
         """Met à jour les stats dans le footer."""
-        total = db.get_total_account_count()
-        cats = len(db.get_all_categories())
-        self.stats_label.configure(text=f"{total} comptes · {cats} catégories")
+        self.stats_label.configure(
+            text=f"{self._account_count} comptes · {len(self._categories_cache)} catégories"
+        )
     
     def _show_empty_state(self):
         """Affiche un message quand il n'y a pas de comptes."""
-        self.empty_frame = ctk.CTkFrame(self.accounts_frame, fg_color="transparent")
+        for widget in self.empty_frame.winfo_children():
+            widget.destroy()
         self.empty_frame.pack(fill="both", expand=True, pady=60)
         
-        ctk.CTkLabel(
+        Icon(
             self.empty_frame,
-            text="🔐",
-            font=("Segoe UI Emoji", 48),
+            "lock",
+            size=38,
+            color="accent",
+            background="bg_primary",
         ).pack(pady=(0, 16))
         
         if self.search_query:
             text = "Aucun résultat trouvé"
             subtext = "Essaie avec d'autres mots-clés"
+        elif self.is_favorites_active:
+            text = "Aucun favori pour le moment"
+            subtext = "Utilisez l’étoile sur un compte pour l’ajouter aux favoris."
         else:
             text = "Aucun compte pour le moment"
-            subtext = "Clique sur « ＋ Ajouter » pour commencer"
+            subtext = "Utilisez le bouton Ajouter pour commencer."
         
         ctk.CTkLabel(
             self.empty_frame,
@@ -393,22 +562,30 @@ class MainScreen(ctk.CTkFrame):
     )
     def _select_category(self, category_id: Optional[int]):
         """Sélectionne une catégorie dans la sidebar."""
+        self._cancel_pending_search()
         self.is_dashboard_active = False
+        self.is_favorites_active = False
         self.selected_category_id = category_id
         
         # Afficher la vue des comptes
         self.dashboard_view.pack_forget()
         self.accounts_view.pack(fill="both", expand=True)
+        self._animate_view_in(self.accounts_view)
         self.add_btn.pack(side="right")
         
         # Mettre à jour le titre
         if category_id is None:
             self.title_label.configure(text="Tous les comptes")
+            self.subtitle_label.configure(
+                text="Retrouvez vos accès, simplement et en sécurité."
+            )
         else:
-            cats = db.get_all_categories()
-            for cat in cats:
+            for cat in self._categories_cache:
                 if cat.id == category_id:
-                    self.title_label.configure(text=f"{cat.icon}  {cat.name}")
+                    self.title_label.configure(text=cat.name)
+                    self.subtitle_label.configure(
+                        text=f"Les identifiants enregistrés dans {cat.name}."
+                    )
                     break
         
         self._refresh_categories()
@@ -420,21 +597,69 @@ class MainScreen(ctk.CTkFrame):
     )
     def _select_dashboard(self):
         """Affiche le tableau de bord de sécurité."""
+        self._cancel_pending_search()
         self.is_dashboard_active = True
+        self.is_favorites_active = False
         self.selected_category_id = None
         
         # Afficher le dashboard
         self.accounts_view.pack_forget()
         self.add_btn.pack_forget()
-        self.dashboard_view.pack(fill="both", expand=True, padx=24, pady=(0, 16))
-        self.dashboard_view.refresh_data()
+        self.dashboard_view.pack(fill="both", expand=True, padx=34, pady=(0, 24))
+        self.dashboard_view.refresh_data(db.get_all_accounts(self.encryption_key))
+        self._animate_view_in(self.dashboard_view, bottom_padding=24)
         
-        self.title_label.configure(text="🛡️  Audit de sécurité")
+        self.title_label.configure(text="Audit de sécurité")
+        self.subtitle_label.configure(
+            text="Un aperçu clair pour renforcer la sécurité de votre coffre."
+        )
         self._refresh_categories()
+
+    @traced_action(
+        "Afficher les favoris",
+        "Seuls les comptes marqués d'une étoile doivent apparaître.",
+    )
+    def _select_favorites(self):
+        """Affiche les comptes favoris."""
+        self._cancel_pending_search()
+        self.is_dashboard_active = False
+        self.is_favorites_active = True
+        self.selected_category_id = None
+        self.dashboard_view.pack_forget()
+        self.accounts_view.pack(fill="both", expand=True)
+        self._animate_view_in(self.accounts_view)
+        self.add_btn.pack(side="right")
+        self.title_label.configure(text="Favoris")
+        self.subtitle_label.configure(
+            text="Vos accès importants, réunis au même endroit."
+        )
+        self._refresh_categories()
+        self._refresh_accounts()
+
+    @traced_action(
+        "Modifier un favori",
+        "L'étoile, le compteur de favoris et la vue active doivent être actualisés.",
+    )
+    def _toggle_favorite(self, account: Account):
+        """Bascule l'état favori d'un compte."""
+        favorite = not account.favorite
+        db.set_account_favorite(account.id, favorite)
+        account.favorite = favorite
+        self._favorite_count += 1 if account.favorite else -1
+        self._refresh_categories()
+        self._refresh_accounts()
+        state = "ajouté aux" if account.favorite else "retiré des"
+        self._show_toast(f"« {account.name} » {state} favoris")
     
     def _on_search(self, query: str):
         """Callback de la barre de recherche."""
         self.search_query = query
+        if self._search_after_id is not None:
+            self.after_cancel(self._search_after_id)
+        self._search_after_id = self.after(120, self._run_search)
+
+    def _run_search(self):
+        self._search_after_id = None
         self._refresh_accounts()
     
     @traced_action(
@@ -447,8 +672,9 @@ class MainScreen(ctk.CTkFrame):
             self._show_toast("Copie désactivée en mode debug")
             return
         if account.password:
-            copy_to_clipboard(account.password)
-            self._show_toast("🔑 Mot de passe copié ! (effacé dans 30s)")
+            seconds = get_clipboard_clear_seconds()
+            copy_to_clipboard(account.password, clear_after_seconds=seconds)
+            self._show_toast(f"Mot de passe copié (effacé dans {seconds} s)")
     
     @traced_action(
         "Copier un identifiant",
@@ -460,8 +686,31 @@ class MainScreen(ctk.CTkFrame):
             self._show_toast("Copie désactivée en mode debug")
             return
         if account.login:
-            copy_to_clipboard(account.login, clear_after_seconds=0)
-            self._show_toast("👤 Login copié !")
+            seconds = get_clipboard_clear_seconds()
+            copy_to_clipboard(account.login, clear_after_seconds=seconds)
+            self._show_toast(f"Identifiant copié (effacé dans {seconds} s)")
+
+    @traced_action(
+        "Copier un code TOTP",
+        "En mode normal, calcul local puis copie avec effacement au plus tard à l'expiration ; en debug, copie bloquée.",
+    )
+    def _copy_totp_code(self, account: Account):
+        """Génère et copie le code TOTP courant."""
+        if self.debug_mode:
+            self._show_toast("Copie désactivée en mode debug")
+            return
+        if account.totp_secret_error:
+            self._show_toast("Secret TOTP illisible : remplace-le dans la fiche du compte", "error")
+            return
+        current_time = time.time()
+        code = generate_totp_code(account.totp_secret, timestamp=current_time)
+        remaining = seconds_until_next_code(timestamp=current_time)
+        clear_after = min(get_clipboard_clear_seconds(), remaining)
+        copy_to_clipboard(code, clear_after_seconds=clear_after)
+        self._show_toast(
+            f"Code {code} copié · expire dans {remaining} s",
+            duration_ms=min(2500, remaining * 1000),
+        )
     
     @traced_action(
         "Ouvrir le formulaire de compte",
@@ -491,10 +740,10 @@ class MainScreen(ctk.CTkFrame):
             notes=data["notes"],
             category_id=data["category_id"],
             encryption_key=self.encryption_key,
+            totp_secret=data["totp_secret"],
         )
         self._refresh_all()
-        self._scan_weak_passwords()
-        self._show_toast(f"✅ « {data['name']} » ajouté !")
+        self._show_toast(f"« {data['name']} » ajouté.")
     
     @traced_action(
         "Ouvrir la modification d'un compte",
@@ -533,10 +782,10 @@ class MainScreen(ctk.CTkFrame):
             notes=data["notes"],
             category_id=data["category_id"],
             encryption_key=self.encryption_key,
+            totp_secret=data["totp_secret"],
         )
         self._refresh_all()
-        self._scan_weak_passwords()
-        self._show_toast(f"✅ « {data['name']} » modifié !")
+        self._show_toast(f"« {data['name']} » modifié.")
     
     @traced_action(
         "Supprimer un compte fictif",
@@ -552,7 +801,7 @@ class MainScreen(ctk.CTkFrame):
         if confirm:
             db.delete_account(account.id)
             self._refresh_all()
-            self._show_toast(f"🗑️ « {account.name} » supprimé")
+            self._show_toast(f"« {account.name} » supprimé.")
     
     def _add_category(self):
         """Ouvre le dialogue d'ajout de catégorie."""
@@ -569,7 +818,7 @@ class MainScreen(ctk.CTkFrame):
         """Sauvegarde une nouvelle catégorie."""
         db.add_category(data["name"], data["color"], data["icon"])
         self._refresh_all()
-        self._show_toast(f"📁 Catégorie « {data['name']} » créée !")
+        self._show_toast(f"Catégorie « {data['name']} » créée.")
     
     def _show_category_context(self, event, category: Category):
         """Affiche un menu contextuel pour une catégorie (clic droit)."""
@@ -588,7 +837,7 @@ class MainScreen(ctk.CTkFrame):
         # Modifier
         ctk.CTkButton(
             menu,
-            text="✏️  Modifier",
+            text="Modifier",
             font=FONTS["body_sm"],
             fg_color="transparent",
             hover_color=theme.get("bg_hover"),
@@ -601,7 +850,7 @@ class MainScreen(ctk.CTkFrame):
         # Supprimer
         ctk.CTkButton(
             menu,
-            text="🗑️  Supprimer",
+            text="Supprimer",
             font=FONTS["body_sm"],
             fg_color="transparent",
             hover_color=theme.get("error_light"),
@@ -637,7 +886,7 @@ class MainScreen(ctk.CTkFrame):
         """Sauvegarde les modifications d'une catégorie."""
         db.update_category(cat_id, data["name"], data["color"], data["icon"])
         self._refresh_all()
-        self._show_toast(f"📁 Catégorie « {data['name']} » modifiée !")
+        self._show_toast(f"Catégorie « {data['name']} » modifiée.")
     
     @traced_action(
         "Supprimer une catégorie fictive",
@@ -656,7 +905,7 @@ class MainScreen(ctk.CTkFrame):
                 self.selected_category_id = None
                 self.title_label.configure(text="Tous les comptes")
             self._refresh_all()
-            self._show_toast(f"🗑️ Catégorie « {category.name} » supprimée")
+            self._show_toast(f"Catégorie « {category.name} » supprimée.")
     
     # ══════════════════════════════════════════════════════════════
     # V2 — Verrouillage automatique
@@ -681,6 +930,7 @@ class MainScreen(ctk.CTkFrame):
 
     def _auto_lock(self):
         """Verrouille l'app après inactivité."""
+        self._lock_timer_id = None
         if hasattr(self, "_locked") and self._locked:
             return
         self._locked = True
@@ -693,9 +943,10 @@ class MainScreen(ctk.CTkFrame):
     # V2 — Scan mots de passe faibles / doublons
     # ══════════════════════════════════════════════════════════════
 
-    def _scan_weak_passwords(self):
+    def _scan_weak_passwords(self, accounts=None):
         """Scanne la base pour détecter les mots de passe faibles ou identiques."""
-        accounts = db.get_all_accounts(self.encryption_key)
+        if accounts is None:
+            accounts = db.get_all_accounts(self.encryption_key)
         seen_passwords: dict = {}   # password → account_id
         weak_ids: set = set()
 
@@ -729,6 +980,7 @@ class MainScreen(ctk.CTkFrame):
             encryption_key=self.encryption_key,
             on_master_password_changed=self._on_master_password_changed,
             on_theme_changed=self.apply_theme,
+            on_vault_imported=self._refresh_all,
             debug_console=self.debug_console,
         )
 
@@ -750,14 +1002,18 @@ class MainScreen(ctk.CTkFrame):
         if self.on_theme_toggle:
             self.on_theme_toggle()
     
-    def _show_toast(self, message: str, toast_type: str = "success"):
+    def _show_toast(
+        self, message: str, toast_type: str = "success", duration_ms: int = 2500
+    ):
         """Affiche une notification temporaire."""
         toast = ToastNotification(
             self,
             message=message,
             toast_type=toast_type,
+            duration_ms=duration_ms,
         )
         toast.place(relx=0.5, rely=0.95, anchor="s")
+        toast.animate_in()
     
     def apply_theme(self):
         """Applique le thème actuel à tout l'écran."""
@@ -765,11 +1021,17 @@ class MainScreen(ctk.CTkFrame):
         self.sidebar.configure(fg_color=theme.get("bg_secondary"))
         self.main_content.configure(fg_color=theme.get("bg_primary"))
         self.title_label.configure(text_color=theme.get("text_primary"))
-        self._theme_btn.configure(text="🌙" if theme.is_dark() else "☀️")
+        self.subtitle_label.configure(text_color=theme.get("text_muted"))
+        if hasattr(self, "_theme_icon"):
+            self._theme_icon.name = "sun" if theme.is_dark() else "moon"
+            self._theme_icon.refresh()
+        if hasattr(self, "winfo_toplevel"):
+            refresh_icons(self.winfo_toplevel())
+        elif hasattr(self, "winfo_children"):
+            refresh_icons(self)
         self.search_bar.apply_theme()
         self.dashboard_view.configure(
             fg_color=theme.get("bg_primary"),
             scrollbar_button_color=theme.get("scrollbar"),
             scrollbar_button_hover_color=theme.get("scrollbar_hover")
         )
-        self._refresh_all()

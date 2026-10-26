@@ -6,18 +6,19 @@ from functools import wraps
 
 
 _EXPECTED_ACTIONS = (
-    (("ajouter", "＋"), "Un formulaire d'ajout doit s'ouvrir. Rien n'est enregistré avant « Sauvegarder »."),
+    (("afficher le mot de passe", "masquer le mot de passe"), "La valeur ne doit apparaître que tant que l'option d'affichage est active ; la masquer doit rétablir les caractères protégés."),
+    (("ajouter",), "Un formulaire d'ajout doit s'ouvrir. Rien n'est enregistré avant « Sauvegarder »."),
     (("sauvegarder",), "Les champs doivent être validés, l'élément enregistré dans le coffre temporaire, puis la liste actualisée."),
     (("supprimer",), "Une confirmation doit apparaître avant la suppression du seul élément fictif sélectionné."),
     (("audit",), "L'audit doit afficher le score et les mots de passe faibles, réutilisés ou anciens présents dans les données fictives."),
     (("tous les comptes",), "La liste complète des comptes fictifs doit s'afficher."),
     (("générer", "regénérer"), "Un mot de passe de démonstration doit être créé sans modifier le coffre avant validation."),
-    (("copier", "📋", "👤", "🔑"), "La copie est volontairement bloquée en mode debug ; le presse-papiers ne doit pas changer."),
+    (("copier",), "La copie est volontairement bloquée en mode debug ; le presse-papiers ne doit pas changer."),
     (("exporter",), "Une boîte de dialogue doit proposer l'export chiffré du coffre temporaire."),
     (("importer",), "Une boîte de dialogue et une confirmation doivent précéder le remplacement des seules données temporaires."),
     (("changer le mot de passe",), "Le mot de passe fictif doit être vérifié, les données de test rechiffrées, puis l'application reverrouillée."),
-    (("paramètres", "⚙"), "La fenêtre des paramètres doit s'ouvrir."),
-    (("thème", "🌙", "☀"), "L'apparence doit basculer entre les thèmes clair et sombre."),
+    (("paramètres",), "La fenêtre des paramètres doit s'ouvrir."),
+    (("thème",), "L'apparence doit basculer entre les thèmes clair et sombre."),
     (("remplir",), "Le remplissage navigateur est indisponible en mode debug et ne doit transmettre aucun identifiant."),
     (("annuler",), "La fenêtre courante doit se fermer sans enregistrer les champs non validés."),
     (("fermer",), "La fenêtre des paramètres doit se fermer sans modifier le coffre."),
@@ -73,6 +74,9 @@ class DebugConsole:
         current = widget
         while current is not None and current is not self.root:
             if "button" in current.__class__.__name__.casefold():
+                label = getattr(current, "accessible_name", "")
+                if label:
+                    return label
                 try:
                     label = str(current.cget("text")).strip()
                     if label:

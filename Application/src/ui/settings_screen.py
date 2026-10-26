@@ -10,20 +10,31 @@ Permet de :
 
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
-from src.ui.theme import theme, FONTS, DIMENSIONS
+from src.ui.after_callbacks import AfterCallbackMixin
+from src.ui.theme import (
+    theme,
+    FONTS,
+    DIMENSIONS,
+    bind_entry_focus,
+    button_style,
+)
+from src.ui.icons import Icon
 from src import database as db
 
 
-class SettingsScreen(ctk.CTkToplevel):
+class SettingsScreen(AfterCallbackMixin, ctk.CTkToplevel):
     """Fenêtre de paramètres."""
 
     def __init__(self, parent, encryption_key: bytes, on_master_password_changed=None,
-                 on_theme_changed=None, debug_console=None, **kwargs):
+                 on_theme_changed=None, on_vault_imported=None,
+                 debug_console=None, **kwargs):
         super().__init__(parent, **kwargs)
+        self._init_after_callbacks()
 
         self.encryption_key = encryption_key
         self.on_master_password_changed = on_master_password_changed
         self.on_theme_changed = on_theme_changed
+        self.on_vault_imported = on_vault_imported
         self.debug_console = debug_console
 
         self.title("Paramètres")
@@ -41,16 +52,29 @@ class SettingsScreen(ctk.CTkToplevel):
 
         self._build()
 
+    def destroy(self):
+        self._cancel_after_callbacks()
+        super().destroy()
+
     # ──────────────────────────────────────────────────────────
     # Construction
     # ──────────────────────────────────────────────────────────
 
     def _build(self):
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(anchor="w", padx=28, pady=(24, 20))
+        Icon(
+            header,
+            "settings",
+            size=20,
+            color="text_secondary",
+            background="bg_dialog",
+        ).pack(side="left", padx=(0, 10))
         ctk.CTkLabel(
-            self, text="⚙️  Paramètres",
+            header, text="Paramètres",
             font=FONTS["heading_sm"],
             text_color=theme.get("text_primary"),
-        ).pack(anchor="w", padx=28, pady=(24, 20))
+        ).pack(side="left")
 
         scroll = ctk.CTkScrollableFrame(
             self, fg_color="transparent",
@@ -60,38 +84,44 @@ class SettingsScreen(ctk.CTkToplevel):
         scroll.pack(fill="both", expand=True, padx=28, pady=(0, 16))
 
         # ── Sécurité ──
-        self._section(scroll, "🔒 Sécurité")
+        self._section(scroll, "Sécurité", "lock")
         self._build_lock_timer(scroll)
+        self._build_clipboard_timeout(scroll)
         self._build_change_password(scroll)
 
         # ── Apparence ──
-        self._section(scroll, "🎨 Apparence")
+        self._section(scroll, "Apparence", "sun")
         self._build_theme(scroll)
 
         # ── Données ──
-        self._section(scroll, "💾 Données")
+        self._section(scroll, "Données", "folder")
         self._build_export_import(scroll)
 
         # Bouton fermer
         ctk.CTkButton(
             self, text="Fermer",
             font=FONTS["body"],
-            fg_color=theme.get("bg_tertiary"),
-            hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_primary"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=DIMENSIONS["button_height"],
+            **button_style("secondary", height=DIMENSIONS["button_height"]),
             command=self.destroy,
         ).pack(padx=28, pady=(0, 24), anchor="e")
 
-    def _section(self, parent, title: str):
+    def _section(self, parent, title: str, icon_name: str):
         """Titre de section."""
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(anchor="w", pady=(16, 6))
+        Icon(
+            row,
+            icon_name,
+            size=16,
+            color="text_secondary",
+            background="bg_dialog",
+        ).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(
-            parent, text=title,
+            row, text=title,
             font=FONTS["body_bold"],
             text_color=theme.get("text_secondary"),
             anchor="w",
-        ).pack(anchor="w", pady=(16, 6))
+        ).pack(side="left")
         ctk.CTkFrame(parent, fg_color=theme.get("border"), height=1).pack(fill="x", pady=(0, 12))
 
     def _build_lock_timer(self, parent):
@@ -148,6 +178,47 @@ class SettingsScreen(ctk.CTkToplevel):
         if self.debug_console:
             self.debug_console.operation_succeeded("Enregistrement du délai de verrouillage")
 
+    def _build_clipboard_timeout(self, parent):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(fill="x", pady=(0, 14))
+
+        ctk.CTkLabel(
+            frame,
+            text="Effacer le presse-papiers après",
+            font=FONTS["body_sm_bold"],
+            text_color=theme.get("text_primary"),
+            anchor="w",
+        ).pack(side="left")
+
+        saved = db.get_setting("clipboard_clear_seconds", "30")
+        current = f"{saved} s" if saved in {"15", "30", "60"} else "30 s"
+        self._clipboard_var = ctk.StringVar(value=current)
+        ctk.CTkOptionMenu(
+            frame,
+            variable=self._clipboard_var,
+            values=["15 s", "30 s", "60 s"],
+            font=FONTS["body_sm"],
+            fg_color=theme.get("bg_input"),
+            button_color=theme.get("bg_tertiary"),
+            button_hover_color=theme.get("bg_hover"),
+            dropdown_fg_color=theme.get("bg_secondary"),
+            dropdown_hover_color=theme.get("bg_hover"),
+            dropdown_text_color=theme.get("text_primary"),
+            text_color=theme.get("text_primary"),
+            corner_radius=DIMENSIONS["corner_radius_sm"],
+            height=36,
+            width=100,
+            command=self._save_clipboard_timeout,
+        ).pack(side="right")
+
+    def _save_clipboard_timeout(self, value: str):
+        seconds = value.split()[0]
+        db.set_setting("clipboard_clear_seconds", seconds)
+        if self.debug_console:
+            self.debug_console.operation_succeeded(
+                "Enregistrement du délai d'effacement du presse-papiers"
+            )
+
     def _build_change_password(self, parent):
         """Formulaire de changement du mot de passe maître."""
         frame = ctk.CTkFrame(
@@ -180,6 +251,7 @@ class SettingsScreen(ctk.CTkToplevel):
                 height=38, show="•",
             )
             e.pack(fill="x", pady=4)
+            bind_entry_focus(e)
             return e
 
         self._old_pwd_entry = _entry("Mot de passe actuel")
@@ -195,11 +267,7 @@ class SettingsScreen(ctk.CTkToplevel):
         ctk.CTkButton(
             inner, text="Changer le mot de passe",
             font=FONTS["body_sm_bold"],
-            fg_color=theme.get("accent"),
-            hover_color=theme.get("accent_hover"),
-            text_color=theme.get("text_on_accent"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=36,
+            **button_style("primary", height=36),
             command=self._do_change_password,
         ).pack(anchor="e", pady=(8, 0))
 
@@ -213,8 +281,11 @@ class SettingsScreen(ctk.CTkToplevel):
         confirm = self._confirm_pwd_entry.get()
 
         def _err(msg):
-            self._change_pwd_error.configure(text=f"⚠️ {msg}")
-            self.after(4000, lambda: self._change_pwd_error.configure(text=""))
+            self._change_pwd_error.configure(text=msg)
+            self._schedule_after(
+                4000,
+                lambda: self._change_pwd_error.configure(text=""),
+            )
 
         if not old_pwd or not new_pwd or not confirm:
             return _err("Tous les champs sont obligatoires")
@@ -309,26 +380,16 @@ class SettingsScreen(ctk.CTkToplevel):
         btn_frame.pack(fill="x", pady=(0, 14))
 
         ctk.CTkButton(
-            btn_frame, text="⬆️  Exporter le coffre (.vault)",
+            btn_frame, text="Exporter le coffre (.vault)",
             font=FONTS["body_sm_bold"],
-            fg_color=theme.get("bg_tertiary"),
-            hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_primary"),
-            border_width=1, border_color=theme.get("border"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=38,
+            **button_style("secondary", height=38),
             command=self._export_vault,
         ).pack(fill="x", pady=(0, 8))
 
         ctk.CTkButton(
-            btn_frame, text="⬇️  Importer un coffre (.vault)",
+            btn_frame, text="Importer un coffre (.vault)",
             font=FONTS["body_sm_bold"],
-            fg_color=theme.get("bg_tertiary"),
-            hover_color=theme.get("bg_hover"),
-            text_color=theme.get("text_primary"),
-            border_width=1, border_color=theme.get("border"),
-            corner_radius=DIMENSIONS["corner_radius_sm"],
-            height=38,
+            **button_style("secondary", height=38),
             command=self._import_vault,
         ).pack(fill="x")
 
@@ -376,6 +437,8 @@ class SettingsScreen(ctk.CTkToplevel):
             return
         try:
             import_vault(path, self.encryption_key)
+            if self.on_vault_imported:
+                self.on_vault_imported()
             if self.debug_console:
                 self.debug_console.operation_succeeded("Import du coffre temporaire")
             messagebox.showinfo("Import réussi", "Coffre importé avec succès.")

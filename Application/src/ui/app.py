@@ -31,33 +31,25 @@ class VaultApp(ctk.CTk):
         self.debug_mode = debug_mode
         self.debug_key = debug_key
         self.debug_console = None
-        if self.debug_mode:
-            from src.debug_console import DebugConsole
 
-            self.debug_console = DebugConsole(self)
-        
+        init_database()
+        init_password_history_table()
+        saved_theme = get_setting("default_theme", "light")
+
+        ctk.set_default_color_theme("blue")
+        ctk.set_appearance_mode(saved_theme)
+
         # ── Configuration de la fenêtre ──
         self.title("VaultApp — Gestionnaire de mots de passe")
         self.geometry(f"{DIMENSIONS['window_width']}x{DIMENSIONS['window_height']}")
         self.minsize(900, 600)
-        
-        # Thème CustomTkinter
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-        
-        # Couleur de fond
         self.configure(fg_color=theme.get("bg_primary"))
-        
-        # Centrer la fenêtre
         self._center_window()
-        
-        # ── Initialiser la base de données ──
-        init_database()
-        init_password_history_table()
 
-        # Appliquer le thème sauvegardé
-        saved_theme = get_setting("default_theme", "dark")
-        ctk.set_appearance_mode(saved_theme)
+        if self.debug_mode:
+            from src.debug_console import DebugConsole
+
+            self.debug_console = DebugConsole(self)
         
         # ── Écran actuel ──
         self.current_screen = None
@@ -77,10 +69,12 @@ class VaultApp(ctk.CTk):
     def _center_window(self):
         """Centre la fenêtre sur l'écran."""
         self.update_idletasks()
-        w = DIMENSIONS['window_width']
-        h = DIMENSIONS['window_height']
-        x = (self.winfo_screenwidth() - w) // 2
-        y = (self.winfo_screenheight() - h) // 2
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        w = max(900, min(DIMENSIONS["window_width"], screen_width - 80))
+        h = max(600, min(DIMENSIONS["window_height"], screen_height - 80))
+        x = max(0, (screen_width - w) // 2)
+        y = max(0, (screen_height - h) // 2)
         self.geometry(f"{w}x{h}+{x}+{y}")
     
     def _clear_screen(self):
