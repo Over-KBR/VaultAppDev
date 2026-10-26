@@ -23,11 +23,13 @@ from src.ui.dashboard_screen import DashboardScreen
 class MainScreen(ctk.CTkFrame):
     """Écran principal avec sidebar catégories + liste des comptes."""
     
-    def __init__(self, parent, encryption_key: bytes, on_theme_toggle=None, **kwargs):
+    def __init__(self, parent, encryption_key: bytes, on_theme_toggle=None,
+                 debug_mode: bool = False, **kwargs):
         super().__init__(parent, fg_color=theme.get("bg_primary"), **kwargs)
         
         self.encryption_key = encryption_key
         self.on_theme_toggle = on_theme_toggle
+        self.debug_mode = debug_mode
         self.selected_category_id = None  # None = toutes les catégories
         self.search_query = ""
         self.is_dashboard_active = False
@@ -36,10 +38,18 @@ class MainScreen(ctk.CTkFrame):
         self._lock_timer_id = None
         self._weak_account_ids: set = set()
 
+        if self.debug_mode:
+            ctk.CTkLabel(
+                self,
+                text="MODE DEBUG — coffre fictif temporaire — presse-papiers et API désactivés",
+                fg_color="#7c2d12",
+                text_color="#ffffff",
+                font=FONTS["body_sm_bold"],
+            ).pack(side="top", fill="x", pady=6)
         self._build()
+        self._scan_weak_passwords()
         self._refresh_all()
         self._reset_lock_timer()
-        self._scan_weak_passwords()
 
         # Réinitialise le timer à chaque activité
         self.winfo_toplevel().bind("<Motion>", self._on_activity, add="+")
@@ -419,12 +429,18 @@ class MainScreen(ctk.CTkFrame):
     
     def _copy_password(self, account: Account):
         """Copie le mot de passe dans le presse-papier."""
+        if self.debug_mode:
+            self._show_toast("Copie désactivée en mode debug")
+            return
         if account.password:
             copy_to_clipboard(account.password)
             self._show_toast("🔑 Mot de passe copié ! (effacé dans 30s)")
     
     def _copy_login(self, account: Account):
         """Copie le login dans le presse-papier."""
+        if self.debug_mode:
+            self._show_toast("Copie désactivée en mode debug")
+            return
         if account.login:
             copy_to_clipboard(account.login, clear_after_seconds=0)
             self._show_toast("👤 Login copié !")
@@ -664,6 +680,9 @@ class MainScreen(ctk.CTkFrame):
     def _on_master_password_changed(self, new_key: bytes):
         """Appelé après changement du mot de passe maître — verrouille l'app."""
         master = self.winfo_toplevel()
+        if self.debug_mode and hasattr(master, "_debug_unlock"):
+            master._debug_unlock(new_key)
+            return
         if hasattr(master, "_show_login"):
             master._show_login()
 

@@ -12,7 +12,7 @@ Sécurité :
 - L'app doit être déverrouillée (encryption_key présente) pour répondre
 - CORS restreint à l'extension (chrome-extension:// et moz-extension://)
 - Les mots de passe ne sont jamais envoyés dans /accounts — seulement ID + nom
-- /fill retourne le mot de passe une seule fois, puis l'efface de la mémoire tampon
+- /fill retourne le login et le mot de passe après sélection du compte
 
 Usage :
     from src.api import VaultAPI
@@ -173,7 +173,7 @@ class VaultAPI:
                         "category_color": a.category_color,
                     }
                     for a in all_accounts
-                    if domain in a.url or a.url == ""
+                    if _account_url_matches_domain(a.url, domain)
                 ]
                 return jsonify({"unlocked": True, "accounts": result})
             except Exception as e:
@@ -202,7 +202,7 @@ class VaultAPI:
             data = request.get_json(silent=True) or {}
             account_id = data.get("account_id")
 
-            if not isinstance(account_id, int):
+            if isinstance(account_id, bool) or not isinstance(account_id, int):
                 return jsonify({"error": "account_id manquant ou invalide"}), 400
 
             try:
@@ -245,6 +245,22 @@ def _extract_domain(url: str) -> str:
         return host.lower()
     except Exception:
         return ""
+
+
+def _account_url_matches_domain(account_url: str, requested_domain: str) -> bool:
+    """Match a stored host only on a domain boundary; blank URLs are global."""
+    if not account_url:
+        return True
+
+    account_domain = _extract_domain(account_url)
+    if not account_domain:
+        return False
+
+    return (
+        account_domain == requested_domain
+        or account_domain.endswith("." + requested_domain)
+        or requested_domain.endswith("." + account_domain)
+    )
 
 
 # ── Singleton global ─────────────────────────────────────────

@@ -227,6 +227,28 @@ class TestHistory:
         assert history[0]["password"] == "recent"
         assert history[1]["password"] == "ancien"
 
+    def test_ordre_deterministe_si_timestamps_identiques(self, tmp_db, encryption_key):
+        import sqlite3
+        from src.database import add_account
+        from src.history import get_password_history, push_password_history
+
+        account_id = add_account("Test", "u", "init", "", "", None, encryption_key)
+        for password in ("premier", "deuxieme", "troisieme"):
+            push_password_history(account_id, password, encryption_key)
+
+        conn = sqlite3.connect(tmp_db)
+        conn.execute(
+            "UPDATE password_history SET changed_at = '2025-01-01 00:00:00' WHERE account_id = ?",
+            (account_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        history = get_password_history(account_id, encryption_key)
+        assert [entry["password"] for entry in history] == [
+            "troisieme", "deuxieme", "premier"
+        ]
+
     def test_historique_supprime_avec_compte(self, tmp_db, encryption_key):
         """Supprimer un compte supprime aussi son historique (ON DELETE CASCADE)."""
         import sqlite3
@@ -361,3 +383,91 @@ class TestVaultIO:
 
         restored = {a.name: a.password for a in get_all_accounts(db_with_data)}
         assert original == restored
+
+
+class TestMasterPasswordChange:
+    def test_change_rechiffre_comptes_et_historique(
+        self, tmp_db, master_password, salt, encryption_key
+    ):
+        import base64
+        from src.crypto import create_verification_hash, derive_key, generate_salt
+        from src.database import (
+            add_account,
+            change_master_password,
+            get_all_accounts,
+            get_master_config,
+            save_master_config,
+        )
+        from src.history import get_password_history, push_password_history
+
+        save_master_config(
+            base64.b64encode(salt).decode("utf-8"),
+            create_verification_hash(master_password, salt),
+        )
+        account_id = add_account(
+            "Compte de test", "demo@example.invalid", "AncienSecret!",
+            "", "Note privée", None, encryption_key,
+        )
+        push_password_history(account_id, "AncienSecret!", encryption_key)
+
+        new_password = "NewDebugMaster42!"
+        new_salt = generate_salt()
+        new_key = derive_key(new_password, new_salt)
+        new_hash = create_verification_hash(new_password, new_salt)
+        change_master_password(
+            new_password, new_salt, new_hash, encryption_key, new_key
+        )
+
+        account = get_all_accounts(new_key)[0]
+        assert account.password == "AncienSecret!"
+        assert account.notes == "Note privée"
+        assert get_password_history(account_id, new_key)[0]["password"] == "AncienSecret!"
+        assert get_master_config() == (
+            base64.b64encode(new_salt).decode("utf-8"),
+            new_hash,
+        )
+
+    def test_change_invalide_annule_toute_la_transaction(
+        self, tmp_db, master_password, salt, encryption_key
+    ):
+        import base64
+        import pytest
+        from src.crypto import create_verification_hash, derive_key, generate_salt
+        from src.database import (
+            add_account,
+            change_master_password,
+            get_all_accounts,
+            get_connection,
+            save_master_config,
+        )
+        from src.history import push_password_history
+
+        save_master_config(
+            base64.b64encode(salt).decode("utf-8"),
+            create_verification_hash(master_password, salt),
+        )
+        account_id = add_account(
+            "Compte de test", "demo@example.invalid", "Secret intact!",
+            "", "", None, encryption_key,
+        )
+        push_password_history(account_id, "Historique!", encryption_key)
+        conn = get_connection()
+        conn.execute(
+            "UPDATE password_history SET password_encrypted = 'invalid' WHERE account_id = ?",
+            (account_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        new_salt = generate_salt()
+        new_key = derive_key("NewDebugMaster42!", new_salt)
+        with pytest.raises(Exception):
+            change_master_password(
+                "NewDebugMaster42!",
+                new_salt,
+                create_verification_hash("NewDebugMaster42!", new_salt),
+                encryption_key,
+                new_key,
+            )
+
+        assert get_all_accounts(encryption_key)[0].password == "Secret intact!"

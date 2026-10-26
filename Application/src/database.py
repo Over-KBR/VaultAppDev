@@ -407,19 +407,13 @@ def change_master_password(new_password: str, new_salt: bytes, new_hash: str,
     cursor = conn.cursor()
 
     try:
-        # 1. Récupérer tous les comptes chiffrés
+        # Re-chiffrer les comptes et l'historique dans la même transaction.
         cursor.execute("SELECT id, password_encrypted, notes_encrypted FROM accounts")
         rows = cursor.fetchall()
 
-        # 2. Re-chiffrer avec la nouvelle clé
         for row in rows:
-            try:
-                pwd_plain = decrypt(row["password_encrypted"], old_key)
-                notes_plain = decrypt(row["notes_encrypted"], old_key)
-            except Exception:
-                pwd_plain = ""
-                notes_plain = ""
-
+            pwd_plain = decrypt(row["password_encrypted"], old_key)
+            notes_plain = decrypt(row["notes_encrypted"], old_key)
             new_pwd_enc = encrypt(pwd_plain, new_key)
             new_notes_enc = encrypt(notes_plain, new_key)
 
@@ -428,7 +422,20 @@ def change_master_password(new_password: str, new_salt: bytes, new_hash: str,
                 (new_pwd_enc, new_notes_enc, row["id"]),
             )
 
-        # 3. Mettre à jour la config
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'password_history'"
+        )
+        if cursor.fetchone():
+            cursor.execute(
+                "SELECT id, password_encrypted FROM password_history"
+            )
+            for row in cursor.fetchall():
+                password = decrypt(row["password_encrypted"], old_key)
+                cursor.execute(
+                    "UPDATE password_history SET password_encrypted = ? WHERE id = ?",
+                    (encrypt(password, new_key), row["id"]),
+                )
+
         salt_b64 = base64.b64encode(new_salt).decode("utf-8")
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('salt', ?)", (salt_b64,))
         cursor.execute(

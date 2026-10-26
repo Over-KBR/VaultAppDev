@@ -22,8 +22,13 @@ from src.api import vault_api
 class VaultApp(ctk.CTk):
     """Fenêtre principale de l'application."""
     
-    def __init__(self):
+    def __init__(self, debug_mode: bool = False, debug_key: bytes = None):
         super().__init__()
+        if debug_mode and debug_key is None:
+            raise ValueError("Le mode debug nécessite une clé de coffre temporaire.")
+
+        self.debug_mode = debug_mode
+        self.debug_key = debug_key
         
         # ── Configuration de la fenêtre ──
         self.title("VaultApp — Gestionnaire de mots de passe")
@@ -52,11 +57,15 @@ class VaultApp(ctk.CTk):
         self.current_screen = None
         self.encryption_key = None
         
-        # ── Démarrer l'API Flask (extension navigateur) ──
-        vault_api.start()
+        # Le mode debug ne doit pas exposer son coffre fictif à l'extension.
+        if not self.debug_mode:
+            vault_api.start()
 
-        # ── Afficher l'écran de bienvenue ──
-        self._show_welcome()
+        if self.debug_mode:
+            self.title("VaultApp — MODE DEBUG (coffre temporaire)")
+            self._show_main(self.debug_key)
+        else:
+            self._show_welcome()
     
     def _center_window(self):
         """Centre la fenêtre sur l'écran."""
@@ -93,6 +102,9 @@ class VaultApp(ctk.CTk):
         self.current_screen.pack(fill="both", expand=True)
     
     def _on_unlock(self, encryption_key=None):
+        if self.debug_mode:
+            self._show_main(encryption_key or self.debug_key)
+            return
         if encryption_key:
             self._show_main(encryption_key)
         else:
@@ -107,14 +119,20 @@ class VaultApp(ctk.CTk):
         """Affiche l'écran principal."""
         if encryption_key:
             self.encryption_key = encryption_key
-        vault_api.set_key(self.encryption_key)
+        if not self.debug_mode:
+            vault_api.set_key(self.encryption_key)
         self._clear_screen()
         self.current_screen = MainScreen(
             self,
             encryption_key=self.encryption_key,
             on_theme_toggle=self._toggle_theme,
+            debug_mode=self.debug_mode,
         )
         self.current_screen.pack(fill="both", expand=True)
+
+    def _debug_unlock(self, encryption_key: bytes):
+        self.debug_key = encryption_key
+        self._show_login()
     
     def _toggle_theme(self):
         """Bascule entre thème sombre et clair."""

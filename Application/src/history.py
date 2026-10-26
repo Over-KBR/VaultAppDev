@@ -79,7 +79,7 @@ def get_password_history(account_id: int, encryption_key: bytes) -> List[dict]:
         SELECT password_encrypted, changed_at
         FROM password_history
         WHERE account_id = ?
-        ORDER BY changed_at DESC
+        ORDER BY id DESC
         LIMIT 3
     """, (account_id,))
     rows = cursor.fetchall()
@@ -113,4 +113,3 @@ def get_all_last_changed_dates() -> dict:
     rows = cursor.fetchall()
     conn.close()
     return {row["account_id"]: row["last_changed"] for row in rows}
-
