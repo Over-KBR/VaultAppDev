@@ -17,12 +17,12 @@ class Category:
     """
     Une catégorie pour organiser les comptes.
     
-    Exemple : "Réseaux sociaux" avec l'icône 📱 et la couleur bleue
+    Exemple : "Réseaux sociaux" avec une icône Lucide et une couleur bleue.
     """
     id: Optional[int] = None       # Identifiant unique (géré par SQLite)
     name: str = ""                  # Nom de la catégorie
     color: str = "#6366f1"          # Couleur en hexadécimal (violet par défaut)
-    icon: str = "🔑"               # Émoji/icône
+    icon: str = "key-round"
     account_count: int = 0          # Nombre de comptes dans cette catégorie
 
 
@@ -42,7 +42,7 @@ class Account:
     category_id: Optional[int] = None  # ID de la catégorie
     category_name: str = ""         # Nom de la catégorie (pour l'affichage)
     category_color: str = "#6366f1" # Couleur de la catégorie (pour l'affichage)
-    category_icon: str = "🔑"      # Icône de la catégorie (pour l'affichage)
+    category_icon: str = "key-round"
     created_at: str = ""            # Date de création
     updated_at: str = ""            # Date de dernière modification
     favorite: bool = False          # Compte épinglé dans les favoris
@@ -55,29 +55,20 @@ class Account:
 # ══════════════════════════════════════════════════════════════
 
 CATEGORY_ICONS = [
-    # Réseaux sociaux & communication
-    "📱", "💬", "📸", "🐦", "👥", "💌",
-    # Email
-    "📧", "✉️", "📨", "📮",
-    # Banque & finance
-    "🏦", "💳", "💰", "💵", "📈",
-    # Shopping
-    "🛒", "🛍️", "🏪", "🎁", "💎",
-    # Jeux
-    "🎮", "🕹️", "🎯", "🏆", "🎲",
-    # Travail & productivité
-    "💼", "🏢", "📊", "📋", "💻",
-    # Divertissement
-    "🎬", "🎵", "📺", "🎧", "📖",
-    # Voyage & transport
-    "✈️", "🚗", "🏨", "🗺️", "🚆",
-    # Santé
-    "🏥", "💊", "🩺", "❤️", "🏃",
-    # Éducation
-    "🎓", "📚", "🔬", "🧪", "✏️",
-    # Général
-    "🔑", "🌐", "⭐", "🔧", "🏠",
-    "🔒", "📁", "☁️", "🛡️", "⚡",
+    "smartphone", "message-square", "camera", "bird", "users-round", "mail",
+    "inbox", "send",
+    "landmark", "credit-card", "wallet-cards", "banknote",
+    "chart-no-axes-column-increasing",
+    "shopping-cart", "shopping-bag", "store", "gift", "gem",
+    "gamepad-2", "target", "trophy", "dice-5",
+    "briefcase-business", "building-2", "chart-pie", "clipboard-list",
+    "laptop",
+    "clapperboard", "music-2", "tv", "headphones", "book-open",
+    "plane", "car-front", "hotel", "map", "train-front",
+    "hospital", "pill", "stethoscope", "heart", "activity",
+    "graduation-cap", "library", "microscope", "flask-conical", "pencil",
+    "key-round", "globe", "star", "settings-2", "house",
+    "lock-keyhole", "folder", "cloud", "shield", "zap",
 ]
 
 # ══════════════════════════════════════════════════════════════

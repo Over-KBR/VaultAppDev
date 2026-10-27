@@ -81,7 +81,7 @@ class DebugConsole:
                     label = str(current.cget("text")).strip()
                     if label:
                         return label
-                except (AttributeError, KeyError, TypeError):
+                except (AttributeError, KeyError, TypeError, ValueError):
                     pass
             current = getattr(current, "master", None)
         return widget.__class__.__name__

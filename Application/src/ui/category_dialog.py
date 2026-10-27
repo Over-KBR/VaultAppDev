@@ -95,7 +95,7 @@ class CategoryDialog(AfterCallbackMixin, ctk.CTkToplevel):
         self.preview_icon = Icon(
             preview_inner,
             normalize_icon(self.selected_icon),
-            size=22,
+            size=24,
             color=self.selected_color,
             background="bg_dialog",
         )
@@ -167,7 +167,7 @@ class CategoryDialog(AfterCallbackMixin, ctk.CTkToplevel):
             mark = Icon(
                 btn,
                 "check",
-                size=16,
+                size=18,
                 color="text_on_accent",
                 background=color_info["hex"],
             )
@@ -201,8 +201,8 @@ class CategoryDialog(AfterCallbackMixin, ctk.CTkToplevel):
             btn = ctk.CTkButton(
                 icons_grid,
                 text="",
-                width=40,
-                height=40,
+                width=42,
+                height=42,
                 corner_radius=DIMENSIONS["corner_radius_sm"],
                 fg_color=theme.get("accent_light") if is_selected else theme.get("bg_tertiary"),
                 hover_color=theme.get("bg_hover"),
@@ -214,7 +214,7 @@ class CategoryDialog(AfterCallbackMixin, ctk.CTkToplevel):
             icon_widget = Icon(
                 btn,
                 normalize_icon(icon),
-                size=18,
+                size=20,
                 color="accent" if is_selected else "text_secondary",
                 background="accent_light" if is_selected else "bg_tertiary",
             )

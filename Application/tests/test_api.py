@@ -33,9 +33,15 @@ def test_status_indicates_locked_and_unlocked(api_client):
     assert client.get("/status").json["unlocked"] is True
 
 
-def test_accounts_returns_metadata_without_password(api_client):
+def test_accounts_returns_metadata_without_password(api_client, monkeypatch):
     api, client, key = api_client
     api.set_key(key)
+    monkeypatch.setattr(
+        "src.database.get_all_accounts",
+        lambda *_args, **_kwargs: pytest.fail(
+            "/accounts ne doit pas déchiffrer le coffre"
+        ),
+    )
 
     response = client.get("/accounts?url=https://example.invalid/login")
     assert response.status_code == 200
@@ -47,11 +53,19 @@ def test_accounts_returns_metadata_without_password(api_client):
     assert [item["name"] for item in response.json["accounts"]] == ["Example"]
 
 
-def test_fill_requires_unlock_and_returns_selected_credentials(api_client):
+def test_fill_requires_unlock_and_returns_selected_credentials(
+    api_client, monkeypatch
+):
     api, client, key = api_client
     assert client.post("/fill", json={"account_id": 1}).status_code == 403
 
     api.set_key(key)
+    monkeypatch.setattr(
+        "src.database.get_all_accounts",
+        lambda *_args, **_kwargs: pytest.fail(
+            "/fill ne doit pas déchiffrer les autres comptes"
+        ),
+    )
     response = client.post("/fill", json={"account_id": 1})
     assert response.status_code == 200
     assert response.json == {

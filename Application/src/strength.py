@@ -164,7 +164,9 @@ def _simple_score(password: str) -> int:
     return min(4, int(score))
 
 
-def calculate_vault_score(accounts, last_changed_dates: dict) -> int:
+def calculate_vault_score(
+    accounts, last_changed_dates: dict, password_scores: dict = None
+) -> int:
     """
     Calcule le score global de santé du coffre (0 à 100%).
     Chaque compte vaut 10 points maximum :
@@ -221,7 +223,11 @@ def calculate_vault_score(accounts, last_changed_dates: dict) -> int:
         acc_pts = 0
 
         # Force
-        f_score = analyze_password(pwd)["score"]
+        f_score = (
+            password_scores[acc.id]
+            if password_scores is not None and acc.id in password_scores
+            else analyze_password(pwd)["score"]
+        )
         if f_score == 4:
             acc_pts += 5
         elif f_score == 3:
@@ -240,4 +246,3 @@ def calculate_vault_score(accounts, last_changed_dates: dict) -> int:
         total_points += acc_pts
 
     return int((total_points / (total_accounts * 10)) * 100)
-

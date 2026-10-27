@@ -60,7 +60,7 @@ class LoginScreen(AfterCallbackMixin, ctk.CTkFrame):
         Icon(
             logo_frame,
             "vault",
-            size=30,
+            size=34,
             color="accent",
             background="accent_light",
         ).place(relx=0.5, rely=0.5, anchor="center")

@@ -27,8 +27,8 @@ def create_debug_vault() -> bytes:
     db.set_setting("auto_lock_minutes", "0")
     db.set_setting("default_theme", "dark")
 
-    personal_id = db.add_category("Debug - personnel", "#3b82f6", "🧪")
-    work_id = db.add_category("Debug - travail", "#a855f7", "💻")
+    personal_id = db.add_category("Debug - personnel", "#3b82f6", "flask-conical")
+    work_id = db.add_category("Debug - travail", "#a855f7", "laptop")
 
     accounts = [
         ("Demo faible", "weak@example.invalid", "123456", "https://example.com", "Compte fictif pour tester l'audit.", personal_id, ""),

@@ -9,6 +9,8 @@ Ces widgets sont les "briques" de l'interface :
 - ToastNotification : notification temporaire
 """
 
+import tkinter.font as tkfont
+
 import customtkinter as ctk
 from src.ui.theme import (
     theme,
@@ -18,6 +20,35 @@ from src.ui.theme import (
     blend_colors,
 )
 from src.ui.icons import Icon, IconButton, normalize_icon
+
+
+_TEXT_METRICS = {}
+
+
+def _fit_label_text(label, full_text, width):
+    font_spec = label.cget("font")
+    cache_key = (id(label.tk), font_spec)
+    font = _TEXT_METRICS.get(cache_key)
+    if font is None:
+        font = tkfont.Font(root=label, font=font_spec)
+        _TEXT_METRICS[cache_key] = font
+
+    max_width = max(0, width - 4)
+    if font.measure(full_text) <= max_width:
+        fitted_text = full_text
+    else:
+        suffix = "..."
+        low, high = 0, len(full_text)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if font.measure(full_text[:middle] + suffix) <= max_width:
+                low = middle
+            else:
+                high = middle - 1
+        fitted_text = full_text[:low].rstrip() + suffix if low else ""
+
+    if label.cget("text") != fitted_text:
+        label.configure(text=fitted_text)
 
 
 class SearchBar(ctk.CTkFrame):
@@ -45,7 +76,7 @@ class SearchBar(ctk.CTkFrame):
         self.icon_label = Icon(
             self.search_frame,
             "search",
-            size=17,
+            size=18,
             color="text_muted",
             background="bg_input",
         )
@@ -110,7 +141,7 @@ class AccountCard(ctk.CTkFrame):
     Carte affichant un compte avec nom, login, catégorie et boutons d'action.
     
     ┌──────────────────────────────────────────────────────┐
-    │ 🎮  Netflix                           📋 ✏️  🗑️    │
+    │ [service icon]  Netflix                  actions    │
     │     email@gmail.com    ••••••••                      │
     └──────────────────────────────────────────────────────┘
     """
@@ -138,6 +169,7 @@ class AccountCard(ctk.CTkFrame):
         self._is_hovered = False
         self._password_visible = False
         self._hover_animation_id = None
+        self._text_fit_after_ids = {}
         self.is_weak = is_weak
         
         self._build()
@@ -147,22 +179,20 @@ class AccountCard(ctk.CTkFrame):
         self.bind("<Leave>", self._on_leave)
     
     def _build(self):
-        # Conteneur principal avec padding
         content = ctk.CTkFrame(self, fg_color="transparent")
-        content.pack(fill="x", padx=16, pady=12)
+        content.pack(fill="x", padx=16, pady=7)
         
-        # ── Colonne gauche : icône catégorie ──
         category_tint = blend_colors(
             self.account.category_color,
             theme.get("bg_card"),
-            0.12,
+            0.16,
         )
         icon_frame = ctk.CTkFrame(
             content,
             fg_color=category_tint,
             corner_radius=DIMENSIONS["corner_radius_sm"],
-            width=40,
-            height=40,
+            width=44,
+            height=44,
         )
         icon_frame.pack(side="left", padx=(0, 14))
         icon_frame.pack_propagate(False)
@@ -170,7 +200,7 @@ class AccountCard(ctk.CTkFrame):
         self.category_icon = Icon(
             icon_frame,
             normalize_icon(self.account.category_icon),
-            size=21,
+            size=26,
             color=self.account.category_color,
             background=category_tint,
         )
@@ -182,43 +212,56 @@ class AccountCard(ctk.CTkFrame):
         
         name_row = ctk.CTkFrame(info_frame, fg_color="transparent")
         name_row.pack(anchor="w", fill="x")
+        self.name_row = name_row
 
-        name_label = ctk.CTkLabel(
+        self.name_label = ctk.CTkLabel(
             name_row,
             text=self.account.name,
             font=FONTS["body_bold"],
             text_color=theme.get("text_primary"),
             anchor="w",
+            height=20,
         )
-        name_label.pack(side="left")
-
+        self.weak_badge = None
         if self.is_weak:
-            ctk.CTkLabel(
-                name_row,
-                text="À renforcer",
-                font=FONTS["caption"],
-                fg_color=theme.get("error_light"),
-                text_color=theme.get("warning"),
-                corner_radius=8,
-            ).pack(side="left", padx=(9, 0), ipadx=6, ipady=2)
-        
-        login_label = ctk.CTkLabel(
+            self._create_weak_badge()
+
+        self.name_label.pack(side="left", fill="x", expand=True)
+        name_row.bind(
+            "<Configure>",
+            lambda _event: self._schedule_label_fit(
+                "name", self.name_label, self.account.name
+            ),
+            add="+",
+        )
+
+        self.login_label = ctk.CTkLabel(
             info_frame,
             text=self.account.login if self.account.login else "Aucun identifiant",
             font=FONTS["body_sm"],
             text_color=theme.get("text_secondary"),
             anchor="w",
+            height=18,
         )
-        login_label.pack(anchor="w")
+        self.login_label.pack(anchor="w", fill="x")
+        full_login = self.account.login if self.account.login else "Aucun identifiant"
+        info_frame.bind(
+            "<Configure>",
+            lambda _event: self._schedule_label_fit(
+                "login", self.login_label, full_login
+            ),
+            add="+",
+        )
 
         password_row = ctk.CTkFrame(info_frame, fg_color="transparent")
-        password_row.pack(anchor="w", fill="x", pady=(1, 0))
+        password_row.pack(anchor="w", fill="x")
         self.password_label = ctk.CTkLabel(
             password_row,
             text="••••••••" if self.account.password else "Aucun mot de passe",
             font=FONTS["caption"],
             text_color=theme.get("text_muted"),
             anchor="w",
+            height=18,
         )
         self.password_label.pack(side="left")
         if self.account.password:
@@ -226,11 +269,11 @@ class AccountCard(ctk.CTkFrame):
                 password_row,
                 "eye",
                 command=self._toggle_password_visibility,
-                size=13,
+                size=18,
                 color="text_muted",
                 background="bg_card",
-                width=24,
-                height=22,
+                width=40,
+                height=40,
                 corner_radius=DIMENSIONS["corner_radius_sm"],
                 fg_color="transparent",
                 hover_color=theme.get("bg_hover"),
@@ -250,11 +293,11 @@ class AccountCard(ctk.CTkFrame):
             command=lambda: (
                 self.on_toggle_favorite(self.account) if self.on_toggle_favorite else None
             ),
-            size=17,
+            size=20,
             color="warning" if self.account.favorite else "text_muted",
             background="bg_card",
-            width=32,
-            height=32,
+            width=40,
+            height=40,
             corner_radius=DIMENSIONS["corner_radius_sm"],
             fg_color="transparent",
             hover_color=theme.get("bg_hover"),
@@ -271,11 +314,11 @@ class AccountCard(ctk.CTkFrame):
                 command=lambda: (
                     self.on_copy_totp(self.account) if self.on_copy_totp else None
                 ),
-                size=17,
+                size=20,
                 color="error" if self.account.totp_secret_error else "accent",
                 background="bg_card",
-                width=32,
-                height=32,
+                width=40,
+                height=40,
                 corner_radius=DIMENSIONS["corner_radius_sm"],
                 fg_color="transparent",
                 hover_color=theme.get("bg_hover"),
@@ -286,13 +329,13 @@ class AccountCard(ctk.CTkFrame):
         # Bouton copier login
         btn_copy_login = IconButton(
             actions_frame,
-            "user",
+            "copy",
             command=lambda: self.on_copy_login(self.account) if self.on_copy_login else None,
-            size=17,
+            size=20,
             color="text_secondary",
             background="bg_card",
-            width=32,
-            height=32,
+            width=40,
+            height=40,
             corner_radius=DIMENSIONS["corner_radius_sm"],
             fg_color="transparent",
             hover_color=theme.get("bg_hover"),
@@ -305,11 +348,11 @@ class AccountCard(ctk.CTkFrame):
             actions_frame,
             "key",
             command=lambda: self.on_copy_password(self.account) if self.on_copy_password else None,
-            size=17,
+            size=20,
             color="accent",
             background="bg_card",
-            width=32,
-            height=32,
+            width=40,
+            height=40,
             corner_radius=DIMENSIONS["corner_radius_sm"],
             fg_color=theme.get("accent_light"),
             hover_color=theme.get("accent_glow"),
@@ -322,11 +365,11 @@ class AccountCard(ctk.CTkFrame):
             actions_frame,
             "edit",
             command=lambda: self.on_edit(self.account) if self.on_edit else None,
-            size=17,
+            size=20,
             color="text_secondary",
             background="bg_card",
-            width=32,
-            height=32,
+            width=40,
+            height=40,
             corner_radius=DIMENSIONS["corner_radius_sm"],
             fg_color="transparent",
             hover_color=theme.get("bg_hover"),
@@ -339,18 +382,52 @@ class AccountCard(ctk.CTkFrame):
             actions_frame,
             "trash",
             command=lambda: self.on_delete(self.account) if self.on_delete else None,
-            size=17,
+            size=20,
             color="text_muted",
             background="bg_card",
             hover_background="error_light",
-            width=34,
-            height=34,
+            width=40,
+            height=40,
             corner_radius=DIMENSIONS["corner_radius_sm"],
             fg_color="transparent",
             hover_color=theme.get("error_light"),
         )
         btn_delete.button.accessible_name = "Supprimer le compte"
         btn_delete.pack(side="left", padx=2)
+
+    def _create_weak_badge(self):
+        self.weak_badge = ctk.CTkLabel(
+            self.name_row,
+            text="À renforcer",
+            font=FONTS["caption"],
+            height=20,
+            fg_color=theme.get("error_light"),
+            text_color=theme.get("warning"),
+            corner_radius=DIMENSIONS["corner_radius_sm"],
+        )
+        self.weak_badge.pack(side="right", padx=(8, 0), ipadx=6)
+
+    def set_weak(self, is_weak: bool):
+        if self.is_weak == is_weak:
+            return
+        self.is_weak = is_weak
+        if is_weak:
+            self._create_weak_badge()
+        elif self.weak_badge is not None:
+            self.weak_badge.destroy()
+            self.weak_badge = None
+
+    def _schedule_label_fit(self, key, label, full_text):
+        previous_id = self._text_fit_after_ids.pop(key, None)
+        if previous_id is not None:
+            self.after_cancel(previous_id)
+
+        def fit():
+            self._text_fit_after_ids.pop(key, None)
+            if self.winfo_exists() and label.winfo_exists():
+                _fit_label_text(label, full_text, label.winfo_width())
+
+        self._text_fit_after_ids[key] = self.after_idle(fit)
 
     def _toggle_password_visibility(self):
         self._password_visible = not self._password_visible
@@ -396,20 +473,14 @@ class AccountCard(ctk.CTkFrame):
             background = blend_colors(
                 theme.get("bg_hover"), theme.get("bg_card"), progress
             )
-            border = blend_colors(
-                theme.get("border_light"), theme.get("border"), progress
-            )
         else:
             background = blend_colors(
                 theme.get("bg_card"), theme.get("bg_hover"), progress
             )
-            border = blend_colors(
-                theme.get("border"), theme.get("border_light"), progress
-            )
         self.configure(
             fg_color=background,
-            border_color=border,
-            border_width=2 if entering else 1,
+            border_color=theme.get("border_light" if entering else "border"),
+            border_width=1,
         )
 
         if step < steps - 1:
@@ -426,6 +497,9 @@ class AccountCard(ctk.CTkFrame):
         if self._hover_animation_id is not None:
             self.after_cancel(self._hover_animation_id)
             self._hover_animation_id = None
+        for callback_id in self._text_fit_after_ids.values():
+            self.after_cancel(callback_id)
+        self._text_fit_after_ids.clear()
         super().destroy()
 
 
@@ -445,13 +519,15 @@ class CategoryButton(ctk.CTkFrame):
         self.on_click = on_click
         self.is_active = is_active
         color = theme.get("accent") if color is None else color
+        self._color = color
+        self._hover_after_id = None
         
         # Conteneur
         self.btn_frame = ctk.CTkFrame(
             self,
             fg_color=theme.get("accent_light") if is_active else "transparent",
-            corner_radius=DIMENSIONS["corner_radius"],
-            height=42,
+            corner_radius=DIMENSIONS["corner_radius_sm"],
+            height=46,
         )
         self.btn_frame.pack(fill="x", padx=4, pady=2)
         self.btn_frame.pack_propagate(False)
@@ -470,7 +546,7 @@ class CategoryButton(ctk.CTkFrame):
         self.icon_label = Icon(
             self.btn_frame,
             normalize_icon(icon),
-            size=17,
+            size=22,
             color=color if is_active else "text_muted",
             background="accent_light" if is_active else "bg_secondary",
         )
@@ -487,18 +563,18 @@ class CategoryButton(ctk.CTkFrame):
         self.name_label.pack(side="left", fill="x", expand=True)
         
         # Badge compteur
+        self.count_label = ctk.CTkLabel(
+            self.btn_frame,
+            text=str(count),
+            font=FONTS["caption"],
+            text_color=theme.get("text_secondary"),
+            fg_color=theme.get("bg_tertiary"),
+            corner_radius=9,
+            width=30,
+        )
         if count > 0:
-            self.count_label = ctk.CTkLabel(
-                self.btn_frame,
-                text=str(count),
-                font=FONTS["caption"],
-                text_color=theme.get("text_secondary"),
-                fg_color=theme.get("bg_tertiary"),
-                corner_radius=9,
-                width=30,
-            )
             self.count_label.pack(side="right", padx=(0, 10))
-            self.count_label.bind("<Button-1>", self._handle_click)
+        self.count_label.bind("<Button-1>", self._handle_click)
         
         # Bind click sur tout le frame
         self.btn_frame.bind("<Button-1>", self._handle_click)
@@ -506,8 +582,50 @@ class CategoryButton(ctk.CTkFrame):
         self.name_label.bind("<Button-1>", self._handle_click)
         
         # Hover
-        self.btn_frame.bind("<Enter>", self._on_enter)
-        self.btn_frame.bind("<Leave>", self._on_leave)
+        for widget in (
+            self,
+            self.btn_frame,
+            self.color_bar,
+            self.icon_label,
+            self.name_label,
+            self.count_label,
+        ):
+            widget.bind("<Enter>", self._on_enter, add="+")
+            widget.bind("<Leave>", self._on_leave, add="+")
+        self.bind("<Destroy>", self._on_destroy, add="+")
+
+    def update_state(
+        self, *, category, label, icon, color, count, is_active
+    ):
+        self.category = category
+        self._color = color
+        self.is_active = is_active
+        self.name_label.configure(
+            text=label,
+            font=FONTS["body_sm_bold"] if is_active else FONTS["body_sm"],
+            text_color=(
+                theme.get("text_primary")
+                if is_active
+                else theme.get("text_secondary")
+            ),
+        )
+        self.icon_label.name = normalize_icon(icon)
+        self.icon_label.color = color if is_active else "text_muted"
+        self.icon_label.background = (
+            "accent_light" if is_active else "bg_secondary"
+        )
+        self.icon_label.refresh()
+        self.color_bar.configure(
+            fg_color=color if is_active else "transparent"
+        )
+        self.count_label.configure(text=str(count))
+        if count and not self.count_label.winfo_manager():
+            self.count_label.pack(side="right", padx=(0, 10))
+        elif not count and self.count_label.winfo_manager():
+            self.count_label.pack_forget()
+        self.btn_frame.configure(
+            fg_color=theme.get("accent_light") if is_active else "transparent"
+        )
     
     def _handle_click(self, event=None):
         if self.on_click:
@@ -518,15 +636,36 @@ class CategoryButton(ctk.CTkFrame):
             self.btn_frame.configure(fg_color=theme.get("bg_hover"))
     
     def _on_leave(self, event=None):
+        if self._hover_after_id is not None:
+            self.after_cancel(self._hover_after_id)
+        self._hover_after_id = self.after_idle(self._restore_hover_state)
+
+    def _restore_hover_state(self):
+        self._hover_after_id = None
+        if not self.winfo_exists():
+            return
+        pointer_x, pointer_y = self.winfo_pointerxy()
+        left, top = self.btn_frame.winfo_rootx(), self.btn_frame.winfo_rooty()
+        inside = (
+            left <= pointer_x < left + self.btn_frame.winfo_width()
+            and top <= pointer_y < top + self.btn_frame.winfo_height()
+        )
         if not self.is_active:
-            self.btn_frame.configure(fg_color="transparent")
+            self.btn_frame.configure(
+                fg_color=theme.get("bg_hover") if inside else "transparent"
+            )
+
+    def _on_destroy(self, event):
+        if event.widget is self and self._hover_after_id is not None:
+            self.after_cancel(self._hover_after_id)
+            self._hover_after_id = None
 
 
 class ToastNotification(ctk.CTkFrame):
     """
     Notification temporaire qui apparaît en bas de l'écran.
     
-    Exemple : "✅ Mot de passe copié !" pendant 2 secondes
+    Example: a short confirmation message shown for two seconds.
     """
     
     def __init__(self, parent, message: str, toast_type: str = "success", 
@@ -557,7 +696,7 @@ class ToastNotification(ctk.CTkFrame):
         Icon(
             inner,
             icon,
-            size=17,
+            size=18,
             color=color,
             background="bg_secondary",
         ).pack(side="left", padx=(0, 8))

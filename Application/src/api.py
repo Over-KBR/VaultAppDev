@@ -162,18 +162,11 @@ class VaultAPI:
 
             try:
                 from src import database as db
-                all_accounts = db.get_all_accounts(key, search_query=domain)
+                accounts_metadata = db.get_accounts_metadata(search_query=domain)
                 result = [
-                    {
-                        "id": a.id,
-                        "name": a.name,
-                        "login": a.login,
-                        "url": a.url,
-                        "category_icon": a.category_icon,
-                        "category_color": a.category_color,
-                    }
-                    for a in all_accounts
-                    if _account_url_matches_domain(a.url, domain)
+                    account
+                    for account in accounts_metadata
+                    if _account_url_matches_domain(account["url"], domain)
                 ]
                 return jsonify({"unlocked": True, "accounts": result})
             except Exception as e:
@@ -207,8 +200,7 @@ class VaultAPI:
 
             try:
                 from src import database as db
-                accounts = db.get_all_accounts(key)
-                account = next((a for a in accounts if a.id == account_id), None)
+                account = db.get_account_credentials_by_id(account_id, key)
 
                 if account is None:
                     return jsonify({"error": "Compte introuvable"}), 404

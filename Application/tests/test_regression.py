@@ -212,12 +212,22 @@ class TestRegressionUI:
         assert len(CATEGORY_ICONS) > 0
         assert len(CATEGORY_COLORS) > 0
 
-    def test_icones_de_categories_compatibles_avec_le_rendu_vectoriel(self):
+    def test_icones_de_categories_disposent_de_ressources_lucide(self):
         from src.models import CATEGORY_ICONS
-        from src.ui.icons import ICON_NAMES, LEGACY_ICON_NAMES, normalize_icon
+        from src.ui.icons import ICON_NAMES, _RASTER_ROOT, normalize_icon
 
-        assert set(CATEGORY_ICONS) <= LEGACY_ICON_NAMES.keys()
-        assert {normalize_icon(icon) for icon in CATEGORY_ICONS} <= ICON_NAMES
+        assert set(CATEGORY_ICONS) <= ICON_NAMES
+        assert {normalize_icon(icon) for icon in CATEGORY_ICONS} == set(CATEGORY_ICONS)
+        assert all(
+            (_RASTER_ROOT / f"{icon}.png").is_file()
+            for icon in ICON_NAMES
+        )
+
+    def test_anciennes_icones_emoji_restent_compatibles(self):
+        from src.ui.icons import normalize_icon
+
+        assert normalize_icon("📱") == "smartphone"
+        assert normalize_icon("🏦") == "landmark"
 
     def test_import_clipboard(self):
         try:

@@ -66,7 +66,7 @@ def init_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             color TEXT NOT NULL DEFAULT '#6366f1',
-            icon TEXT NOT NULL DEFAULT '🔑',
+            icon TEXT NOT NULL DEFAULT 'key-round',
             sort_order INTEGER NOT NULL DEFAULT 0
         )
     """)
@@ -213,13 +213,13 @@ def delete_category(cat_id: int):
 def create_default_categories():
     """Crée des catégories par défaut au premier lancement."""
     defaults = [
-        ("Réseaux sociaux", "#3b82f6", "📱"),
-        ("Email", "#10b981", "📧"),
-        ("Banque", "#eab308", "🏦"),
-        ("Shopping", "#f97316", "🛒"),
-        ("Jeux", "#a855f7", "🎮"),
-        ("Travail", "#6b7280", "💼"),
-        ("Divertissement", "#ec4899", "🎬"),
+        ("Réseaux sociaux", "#3b82f6", "smartphone"),
+        ("Email", "#10b981", "mail"),
+        ("Banque", "#eab308", "landmark"),
+        ("Shopping", "#f97316", "shopping-cart"),
+        ("Jeux", "#a855f7", "gamepad-2"),
+        ("Travail", "#6b7280", "briefcase-business"),
+        ("Divertissement", "#ec4899", "clapperboard"),
     ]
     for name, color, icon in defaults:
         add_category(name, color, icon)
@@ -230,7 +230,7 @@ def create_default_categories():
 # ══════════════════════════════════════════════════════════════
 
 def get_all_accounts(encryption_key: bytes, category_id: Optional[int] = None, 
-                      search_query: str = "") -> List[Account]:
+                      search_query: str = "", favorite_only: bool = False) -> List[Account]:
     """
     Récupère tous les comptes, déchiffrés.
     
@@ -259,6 +259,9 @@ def get_all_accounts(encryption_key: bytes, category_id: Optional[int] = None,
         query += " AND (a.name LIKE ? OR a.login LIKE ? OR a.url LIKE ?)"
         like = f"%{search_query}%"
         params.extend([like, like, like])
+
+    if favorite_only:
+        query += " AND a.favorite = 1"
     
     query += " ORDER BY a.name COLLATE NOCASE"
     
@@ -294,7 +297,7 @@ def get_all_accounts(encryption_key: bytes, category_id: Optional[int] = None,
             category_id=row['category_id'],
             category_name=row['cat_name'] or "Sans catégorie",
             category_color=row['cat_color'] or "#6b7280",
-            category_icon=row['cat_icon'] or "🔑",
+            category_icon=row['cat_icon'] or "key-round",
             created_at=row['created_at'] or "",
             updated_at=row['updated_at'] or "",
             favorite=bool(row["favorite"]),
@@ -302,6 +305,59 @@ def get_all_accounts(encryption_key: bytes, category_id: Optional[int] = None,
             totp_secret_error=totp_secret_error,
         ))
     return accounts
+
+
+def get_account_credentials_by_id(
+    account_id: int, encryption_key: bytes
+) -> Optional[Account]:
+    """Decrypt only the login and password requested by the browser API."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, login, password_encrypted FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return Account(
+            id=row["id"],
+            login=row["login"],
+            password=decrypt(row["password_encrypted"], encryption_key),
+        )
+    finally:
+        conn.close()
+
+
+def get_accounts_metadata(search_query: str = "") -> List[dict]:
+    """Return searchable account metadata without reading encrypted fields."""
+    conn = get_connection()
+    try:
+        query = """
+            SELECT a.id, a.name, a.login, a.url,
+                   c.icon AS category_icon, c.color AS category_color
+            FROM accounts a
+            LEFT JOIN categories c ON a.category_id = c.id
+        """
+        params = ()
+        if search_query:
+            query += " WHERE a.name LIKE ? OR a.login LIKE ? OR a.url LIKE ?"
+            like = f"%{search_query}%"
+            params = (like, like, like)
+        query += " ORDER BY a.name COLLATE NOCASE"
+        rows = conn.execute(query, params).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "login": row["login"],
+                "url": row["url"],
+                "category_icon": row["category_icon"] or "key-round",
+                "category_color": row["category_color"] or "#6b7280",
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
 
 
 def add_account(name: str, login: str, password: str, url: str, notes: str,
@@ -390,6 +446,34 @@ def get_total_account_count() -> int:
     row = cursor.fetchone()
     conn.close()
     return row['count']
+
+
+def get_favorite_count() -> int:
+    """Return the number of favorite accounts without decrypting credentials."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS count FROM accounts WHERE favorite = 1"
+        ).fetchone()
+        return row["count"]
+    finally:
+        conn.close()
+
+
+def get_account_stats() -> Tuple[int, int]:
+    """Return total and favorite counts from one metadata-only query."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(favorite), 0) AS favorites
+            FROM accounts
+            """
+        ).fetchone()
+        return row["total"], row["favorites"]
+    finally:
+        conn.close()
 
 
 # ══════════════════════════════════════════════════════════════

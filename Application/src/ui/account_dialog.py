@@ -433,7 +433,7 @@ class AccountDialog(AfterCallbackMixin, ctk.CTkToplevel):
                 command=_toggle,
                 color="text_muted",
                 background="bg_input",
-                width=28, height=28,
+                width=36, height=36,
                 fg_color="transparent",
                 hover_color=theme.get("bg_hover"),
             )

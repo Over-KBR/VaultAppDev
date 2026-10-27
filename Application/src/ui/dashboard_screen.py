@@ -1,8 +1,11 @@
 import customtkinter as ctk
+import logging
+import queue
+import threading
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Set, Tuple
+from typing import List, Dict, Tuple
 from src.ui.theme import theme, FONTS, DIMENSIONS, blend_colors
-from src.strength import analyze_password, is_weak
+from src.strength import analyze_password
 from src.history import get_all_last_changed_dates
 from src import database as db
 from src.models import Account
@@ -39,21 +42,111 @@ class DashboardScreen(ctk.CTkScrollableFrame):
         )
         self.encryption_key = encryption_key
         self.on_edit_account = on_edit_account
+        self._refresh_generation = 0
+        self._refresh_cancel_event = None
+        self._refresh_worker = None
+        self._refresh_results = queue.Queue()
+        self._refresh_after_id = None
 
     def refresh_data(self, accounts=None):
         """Calcule les statistiques et reconstruit toute la vue."""
-        # Vider les widgets existants
+        self.cancel_refresh()
+        if accounts is None:
+            accounts = db.get_all_accounts(self.encryption_key)
+        self._render_analysis(self._prepare_analysis(accounts))
+
+    def refresh_data_async(self, on_error=None, on_complete=None):
+        """Calcule l’audit hors du thread Tk et ne rend que le résultat actuel."""
+        self.cancel_refresh()
+        self._refresh_generation += 1
+        generation = self._refresh_generation
+        cancel_event = threading.Event()
+        self._refresh_cancel_event = cancel_event
+
+        def analyze():
+            try:
+                accounts = db.get_all_accounts(self.encryption_key)
+                if cancel_event.is_set():
+                    return
+                result = self._prepare_analysis(accounts)
+                if not cancel_event.is_set():
+                    self._refresh_results.put((generation, result, None))
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Impossible de calculer l’audit de sécurité"
+                )
+                self._refresh_results.put((generation, None, True))
+
+        self._refresh_worker = threading.Thread(
+            target=analyze,
+            name="vault-security-audit",
+            daemon=True,
+        )
+        self._refresh_worker.start()
+        self._refresh_after_id = self.after(
+            40, lambda: self._collect_analysis(
+                generation, on_error, on_complete
+            )
+        )
+
+    def cancel_refresh(self):
+        self._refresh_generation += 1
+        if self._refresh_cancel_event is not None:
+            self._refresh_cancel_event.set()
+            self._refresh_cancel_event = None
+        if self._refresh_after_id is not None:
+            self.after_cancel(self._refresh_after_id)
+            self._refresh_after_id = None
+
+    def clear_data(self):
         for widget in self.winfo_children():
             widget.destroy()
 
-        # 1. Récupération et analyse des données
-        if accounts is None:
-            accounts = db.get_all_accounts(self.encryption_key)
-        last_changed_dates = get_all_last_changed_dates()
+    def destroy(self):
+        self.cancel_refresh()
+        super().destroy()
 
+    def _collect_analysis(self, generation, on_error, on_complete):
+        self._refresh_after_id = None
+        result = None
+        while True:
+            try:
+                candidate = self._refresh_results.get_nowait()
+            except queue.Empty:
+                break
+            if candidate[0] == generation:
+                result = candidate
+
+        if generation != self._refresh_generation:
+            return
+        if result is None:
+            if self._refresh_worker is not None and self._refresh_worker.is_alive():
+                self._refresh_after_id = self.after(
+                    40,
+                    lambda: self._collect_analysis(
+                        generation, on_error, on_complete
+                    ),
+                )
+            return
+
+        _, analysis, failed = result
+        self._refresh_cancel_event = None
+        self._refresh_worker = None
+        if failed:
+            if on_error is not None:
+                on_error()
+            return
+        self._render_analysis(analysis)
+        if on_complete is not None:
+            on_complete(analysis[-1])
+
+    def _prepare_analysis(self, accounts):
+        """Prépare uniquement des données Python, sans accéder aux widgets Tk."""
+        last_changed_dates = get_all_last_changed_dates()
         weak_accounts: List[Tuple[Account, dict]] = []
         password_groups: Dict[str, List[Account]] = {}
         obsolete_accounts: List[Tuple[Account, int]] = [] # (account, age_in_days)
+        password_scores = {}
 
         now_naive_utc = datetime.now(timezone.utc).replace(tzinfo=None)
         six_months_ago = now_naive_utc - timedelta(days=180)
@@ -65,6 +158,7 @@ class DashboardScreen(ctk.CTkScrollableFrame):
 
             # A. Mots de passe faibles
             analysis = analyze_password(pwd)
+            password_scores[acc.id] = analysis["score"]
             if analysis["score"] <= 1:
                 weak_accounts.append((acc, analysis))
 
@@ -87,8 +181,40 @@ class DashboardScreen(ctk.CTkScrollableFrame):
 
         # 2. Calcul du Score Global
         from src.strength import calculate_vault_score
-        score_percent = calculate_vault_score(accounts, last_changed_dates)
+        score_percent = calculate_vault_score(
+            accounts, last_changed_dates, password_scores
+        )
         total_accounts = len(accounts)
+        return (
+            weak_accounts,
+            duplicate_groups,
+            reused_count,
+            obsolete_accounts,
+            score_percent,
+            total_accounts,
+            {
+                account.id
+                for account, _analysis in weak_accounts
+            }
+            | {
+                account.id
+                for group in duplicate_groups.values()
+                for account in group
+            },
+        )
+
+    def _render_analysis(self, analysis):
+        for widget in self.winfo_children():
+            widget.destroy()
+        (
+            weak_accounts,
+            duplicate_groups,
+            reused_count,
+            obsolete_accounts,
+            score_percent,
+            total_accounts,
+            _weak_account_ids,
+        ) = analysis
 
         # 3. Rendu Visuel
         self._build_header_score(score_percent, len(weak_accounts), reused_count, len(obsolete_accounts))
@@ -206,7 +332,7 @@ class DashboardScreen(ctk.CTkScrollableFrame):
         Icon(
             badge,
             icon,
-            size=14,
+            size=16,
             color="text_secondary",
             background="bg_tertiary",
         ).pack(side="left", padx=(8, 4), pady=2)
@@ -320,7 +446,7 @@ class DashboardScreen(ctk.CTkScrollableFrame):
         category_icon = Icon(
             row,
             normalize_icon(account.category_icon),
-            size=18,
+            size=20,
             color=account.category_color,
             background="bg_secondary",
         )

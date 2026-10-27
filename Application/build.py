@@ -45,6 +45,8 @@ def build():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     icon_path = os.path.join(script_dir, "assets", "logo.ico")
     icon_exists = os.path.exists(icon_path)
+    icon_assets = os.path.join(script_dir, "assets", "icons")
+    icon_assets_exist = os.path.isdir(icon_assets)
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
@@ -66,6 +68,11 @@ def build():
 
         # Données CustomTkinter (thèmes, polices)
         "--collect-all=customtkinter",
+        *(
+            [f"--add-data={icon_assets}{os.pathsep}assets/icons"]
+            if icon_assets_exist
+            else []
+        ),
 
         "main.py",
     ]

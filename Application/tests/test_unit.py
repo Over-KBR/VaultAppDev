@@ -285,6 +285,23 @@ class TestCalculateVaultScore:
         # 10/10 points pour chaque compte -> 100%
         assert calculate_vault_score(accs, {}) == 100
 
+    def test_score_reutilise_les_analyses_deja_calculees(self, monkeypatch):
+        import src.strength as strength
+        from datetime import datetime, timezone
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        account = self.DummyAccount(1, "password", now_str)
+        monkeypatch.setattr(
+            strength,
+            "analyze_password",
+            lambda _password: pytest.fail(
+                "L’analyse de force devrait être réutilisée"
+            ),
+        )
+
+        assert strength.calculate_vault_score(
+            [account], {}, password_scores={1: 4}
+        ) == 100
+
     def test_mot_de_passe_faible_reduit_le_score(self):
         from src.strength import calculate_vault_score
         from datetime import datetime, timezone

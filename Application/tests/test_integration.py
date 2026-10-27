@@ -159,6 +159,45 @@ class TestAccounts:
         assert account.id == account_id
         assert account.favorite is True
 
+    def test_filtrer_favoris_sans_retourner_les_autres_comptes(
+        self, tmp_db, encryption_key
+    ):
+        from src.database import (
+            add_account,
+            get_all_accounts,
+            get_account_stats,
+            get_favorite_count,
+            set_account_favorite,
+        )
+
+        favorite_id = add_account(
+            "Favori", "login", "favorite-secret", "", "", None, encryption_key
+        )
+        add_account("Autre", "login", "other-secret", "", "", None, encryption_key)
+        set_account_favorite(favorite_id, True)
+
+        accounts = get_all_accounts(encryption_key, favorite_only=True)
+        assert [account.id for account in accounts] == [favorite_id]
+        assert get_favorite_count() == 1
+        assert get_account_stats() == (2, 1)
+
+    def test_lire_uniquement_les_identifiants_d_un_compte(
+        self, tmp_db, encryption_key
+    ):
+        from src.database import add_account, get_account_credentials_by_id
+
+        account_id = add_account(
+            "Exemple", "login@example.invalid", "secret", "", "private note",
+            None, encryption_key, totp_secret="private totp",
+        )
+
+        account = get_account_credentials_by_id(account_id, encryption_key)
+        assert account is not None
+        assert account.login == "login@example.invalid"
+        assert account.password == "secret"
+        assert account.notes == ""
+        assert account.totp_secret == ""
+
     def test_secret_totp_est_chiffre_et_dechiffre(self, tmp_db, encryption_key):
         import sqlite3
         from src.database import add_account, get_all_accounts, update_account
